@@ -51,7 +51,15 @@ fi
 
 # Check if zonegroup already exists
 if radosgw-admin zonegroup list 2>/dev/null | grep -q "\"$ZONEGROUP\""; then
-    log "RGW zonegroup '$ZONEGROUP' already exists, skipping creation"
+    log "RGW zonegroup '$ZONEGROUP' already exists, ensuring it's configured as master"
+    radosgw-admin zonegroup modify \
+        --rgw-zonegroup="$ZONEGROUP" \
+        --endpoints="$ENDPOINT" \
+        --master \
+        --default || {
+        error "Failed to configure RGW zonegroup as master"
+        exit 1
+    }
 else
     log "Creating RGW zonegroup: $ZONEGROUP"
     radosgw-admin zonegroup create \
@@ -67,7 +75,16 @@ fi
 
 # Check if zone already exists
 if radosgw-admin zone list 2>/dev/null | grep -q "\"$ZONE\""; then
-    log "RGW zone '$ZONE' already exists, skipping creation"
+    log "RGW zone '$ZONE' already exists, ensuring it's configured as master"
+    radosgw-admin zone modify \
+        --rgw-zonegroup="$ZONEGROUP" \
+        --rgw-zone="$ZONE" \
+        --endpoints="$ENDPOINT" \
+        --master \
+        --default || {
+        error "Failed to configure RGW zone as master"
+        exit 1
+    }
 else
     log "Creating RGW zone: $ZONE"
     radosgw-admin zone create \
