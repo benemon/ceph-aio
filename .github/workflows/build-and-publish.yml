@@ -104,19 +104,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image
+      - name: Build image for testing
         run: |
           echo "Building Ceph AIO for version ${{ matrix.ceph_version }}"
 
           # Generate build date in YYYYMMDD format (matching Ceph's format)
           BUILD_DATE=$(date +%Y%m%d)
 
-          # Build with full repository path for easier testing
-          docker build \
+          # Build for amd64 only (for local testing on runner)
+          docker buildx build \
+            --platform linux/amd64 \
             --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
             --file Containerfile \
+            --load \
             .
 
       - name: Check available disk space
@@ -136,20 +138,6 @@ jobs:
           # Run tests with full image path
           IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} ./test-suite.sh
         timeout-minutes: 30
-
-      - name: Save build artifacts on success
-        if: success()
-        run: |
-          mkdir -p /tmp/images
-          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} | gzip > /tmp/images/ceph-aio-${{ matrix.ceph_version }}.tar.gz
-
-      - name: Upload image artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ceph-aio-${{ matrix.ceph_version }}
-          path: /tmp/images/ceph-aio-${{ matrix.ceph_version }}.tar.gz
-          retention-days: 1
 
       - name: Collect logs on failure
         if: failure()
@@ -189,8 +177,8 @@ jobs:
           docker stop $CONTAINER_NAME 2>/dev/null || true
           docker rm $CONTAINER_NAME 2>/dev/null || true
 
-  # Job 2b: Build-only and publish (skip tests) for manual workflow
-  build-only:
+  # Job 2b: Build and publish (skip tests) for manual workflow
+  build-and-publish:
     needs: discover-versions
     if: |
       inputs.skip_tests == true &&
@@ -209,20 +197,8 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image
-        run: |
-          echo "Building Ceph AIO for version ${{ matrix.ceph_version }} (tests skipped)"
-
-          # Generate build date in YYYYMMDD format (matching Ceph's format)
-          BUILD_DATE=$(date +%Y%m%d)
-
-          # Build with full repository path
-          docker build \
-            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
-            --file Containerfile \
-            .
+      - name: Set up QEMU for multi-platform builds
+        uses: docker/setup-qemu-action@v3
 
       - name: Log in to Quay.io
         uses: docker/login-action@v3
@@ -231,17 +207,27 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
 
-      - name: Push images to registry
+      - name: Build and push multi-platform images
         run: |
+          echo "Building and pushing Ceph AIO for version ${{ matrix.ceph_version }} (tests skipped)"
+
+          # Generate build date in YYYYMMDD format (matching Ceph's format)
           BUILD_DATE=$(date +%Y%m%d)
 
-          echo "Pushing images for ${{ matrix.ceph_version }} (tests skipped)"
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
+          # Build and push for both amd64 and arm64
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
+            --file Containerfile \
+            --push \
+            .
 
-          echo "Successfully pushed:"
+          echo "Successfully pushed multi-platform images:"
           echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling)"
           echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable)"
+          echo "  - Platforms: linux/amd64, linux/arm64"
 
   # Job 3: Publish images to Quay.io (after successful tests)
   publish:
@@ -255,15 +241,14 @@ jobs:
         ceph_version: ${{ fromJson(needs.discover-versions.outputs.matrix) }}
 
     steps:
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ceph-aio-${{ matrix.ceph_version }}
-          path: /tmp/images
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Load Docker image
-        run: |
-          gunzip -c /tmp/images/ceph-aio-${{ matrix.ceph_version }}.tar.gz | docker load
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU for multi-platform builds
+        uses: docker/setup-qemu-action@v3
 
       - name: Log in to Quay.io
         uses: docker/login-action@v3
@@ -272,22 +257,25 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
 
-      - name: Push images to registry
+      - name: Build and push multi-platform images
         run: |
           # Generate build date in YYYYMMDD format (matching Ceph's format)
           BUILD_DATE=$(date +%Y%m%d)
 
-          # Push major version tag (e.g., v19, v18, v17)
-          # This tag always points to the latest build for this major version
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
+          # Build and push for both amd64 and arm64
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
+            --file Containerfile \
+            --push \
+            .
 
-          # Push dated version tag (e.g., v19-20251003)
-          # This provides a stable, immutable reference to this specific build
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
-
-          echo "Successfully pushed:"
+          echo "Successfully pushed multi-platform images:"
           echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling)"
           echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable)"
+          echo "  - Platforms: linux/amd64, linux/arm64"
 
       - name: Generate image summary
         run: |
