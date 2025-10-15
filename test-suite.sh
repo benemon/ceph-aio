@@ -334,11 +334,19 @@ test_custom_credentials() {
     log "Waiting for dashboard setup to complete..."
     sleep 30
 
-    # Verify custom user exists (indirect check via dashboard services)
+    # Verify dashboard is running
     if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services | grep -q "dashboard"; then
-        error "Dashboard not configured with custom credentials"
+        error "Dashboard not running"
         return 1
     fi
+
+    # Verify custom user was created (not the default 'admin')
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph dashboard ac-user-show testadmin &>/dev/null; then
+        error "Custom dashboard user 'testadmin' was not created"
+        return 1
+    fi
+
+    log "Verified custom dashboard user 'testadmin' exists"
 
     log "Custom dashboard credentials configured"
 
