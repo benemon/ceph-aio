@@ -219,16 +219,15 @@ test_dashboard() {
 
     wait_for_cluster 120 1 || return 1
 
-    # Check if dashboard is enabled
-    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr module ls | grep -q '"dashboard"'; then
-        error "Dashboard module not found"
-        return 1
-    fi
+    # Wait for dashboard setup to complete (runs as a separate supervisor job)
+    log "Waiting for dashboard setup to complete..."
+    sleep 30
 
-    # Check dashboard URL is configured
-    local dashboard_url=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services -f json | grep -o '"dashboard":"[^"]*"' | cut -d'"' -f4)
+    # Check if dashboard is enabled by checking mgr services directly
+    local dashboard_url=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services -f json 2>/dev/null | grep -o '"dashboard":"[^"]*"' | cut -d'"' -f4)
     if [ -z "$dashboard_url" ]; then
-        error "Dashboard URL not configured"
+        error "Dashboard URL not configured - dashboard may not be enabled"
+        $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services
         return 1
     fi
 
