@@ -330,6 +330,10 @@ test_custom_credentials() {
 
     wait_for_cluster 120 1 || return 1
 
+    # Wait for dashboard setup to complete (runs as a separate supervisor job)
+    log "Waiting for dashboard setup to complete..."
+    sleep 30
+
     # Verify custom user exists (indirect check via dashboard services)
     if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services | grep -q "dashboard"; then
         error "Dashboard not configured with custom credentials"
