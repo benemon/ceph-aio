@@ -8,13 +8,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_RESULTS=()
 FAILED_TESTS=()
 
-# Detect container runtime (docker or $CONTAINER_RUNTIME)
-if command -v docker &> /dev/null; then
+# Detect container runtime (docker or podman)
+# Can be overridden via CONTAINER_RUNTIME env var
+if [ -n "$CONTAINER_RUNTIME" ] && command -v "$CONTAINER_RUNTIME" &> /dev/null; then
+    # Use explicitly set CONTAINER_RUNTIME if valid
+    :
+elif command -v docker &> /dev/null; then
     CONTAINER_RUNTIME="docker"
-elif command -v $CONTAINER_RUNTIME &> /dev/null; then
-    CONTAINER_RUNTIME="$CONTAINER_RUNTIME"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
 else
-    echo "ERROR: Neither docker nor $CONTAINER_RUNTIME found"
+    echo "ERROR: Neither docker nor podman found"
     exit 1
 fi
 
