@@ -44,15 +44,12 @@ success() {
     echo -e "${GREEN}[SUCCESS]${NC} $*"
 }
 
-# Cleanup function
+# Cleanup function (only cleans up on success)
 cleanup() {
     log "Cleaning up test containers..."
     $CONTAINER_RUNTIME stop ceph-test 2>/dev/null || true
     $CONTAINER_RUNTIME rm ceph-test 2>/dev/null || true
 }
-
-# Trap cleanup on exit
-trap cleanup EXIT
 
 # Test function wrapper
 run_test() {
@@ -484,6 +481,7 @@ main() {
 
     if [ $failed -eq 0 ]; then
         success "All tests passed! ✓"
+        cleanup
         return 0
     else
         error "Some tests failed! ✗"
@@ -491,6 +489,7 @@ main() {
         for test in "${FAILED_TESTS[@]}"; do
             error "  - $test"
         done
+        warn "Container 'ceph-test' left running for debugging"
         return 1
     fi
 }

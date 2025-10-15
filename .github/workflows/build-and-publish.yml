@@ -172,6 +172,12 @@ jobs:
           docker exec ceph-test ceph -s 2>&1 || echo "Ceph not accessible"
           echo "::endgroup::"
 
+      - name: Cleanup test container
+        if: always()
+        run: |
+          docker stop ceph-test 2>/dev/null || true
+          docker rm ceph-test 2>/dev/null || true
+
   # Job 3: Publish images to Quay.io
   publish:
     needs: [discover-versions, build-test]
