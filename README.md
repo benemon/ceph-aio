@@ -134,6 +134,7 @@ podman exec ceph-dev ceph -s
 | `CEPH_FSID` | auto-generated | Cluster FSID (UUID) |
 | `DASHBOARD_USER` | admin | Dashboard login username |
 | `DASHBOARD_PASS` | admin@ceph123 | Dashboard login password |
+| `DISABLE_MON_DISK_WARNINGS` | false | Set to `true` to disable monitor disk space warnings (useful for CI/testing) |
 
 ### Intelligent Replication Scaling
 

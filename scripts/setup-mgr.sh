@@ -42,6 +42,17 @@ ceph config set mon auth_allow_insecure_global_id_reclaim false || {
     exit 1
 }
 
+# Optionally disable monitor data availability warnings for CI/testing environments
+# In containers, the monitor checks the root filesystem which may be constrained
+# Can be enabled via DISABLE_MON_DISK_WARNINGS=true environment variable
+if [ "${DISABLE_MON_DISK_WARNINGS:-false}" = "true" ]; then
+    log "Disabling monitor disk space warnings (DISABLE_MON_DISK_WARNINGS=true)"
+    ceph config set mon mon_data_avail_warn 1 || {
+        error "Failed to adjust monitor disk space warning threshold"
+        exit 1
+    }
+fi
+
 # Conditionally silence pool redundancy warnings (only for single-OSD setups)
 OSD_COUNT=${OSD_COUNT:-1}
 if [ "$OSD_COUNT" -eq 1 ]; then

@@ -109,6 +109,7 @@ test_single_osd() {
     $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -138,6 +139,7 @@ test_two_osds() {
     $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=2 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 150 2 || return 1
@@ -177,6 +179,7 @@ test_three_osds() {
     $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=3 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 180 3 || return 1
@@ -213,6 +216,7 @@ test_dashboard() {
         -p 8443:8443 \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -243,6 +247,7 @@ test_rgw() {
         -p 8000:8000 \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -282,6 +287,7 @@ test_rbd_pool() {
     $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -316,6 +322,7 @@ test_custom_credentials() {
     $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         -e DASHBOARD_USER=testadmin \
         -e DASHBOARD_PASS=TestPass123! \
         $IMAGE_TAG || return 1
@@ -340,6 +347,7 @@ test_replication() {
     $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=3 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 180 3 || return 1
@@ -379,6 +387,7 @@ test_security() {
     $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -402,6 +411,7 @@ test_idempotency() {
     $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
