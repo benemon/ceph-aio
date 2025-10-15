@@ -21,9 +21,14 @@ on:
   workflow_dispatch:
     inputs:
       ceph_versions:
-        description: 'Comma-separated list of Ceph versions to build (e.g., v19.2.3,v18.2.7)'
+        description: 'Comma-separated list of Ceph versions to build (e.g., v19,v18,v17)'
         required: false
         type: string
+      skip_tests:
+        description: 'Skip tests and go straight to publish'
+        required: false
+        type: boolean
+        default: false
 
 env:
   REGISTRY: quay.io
@@ -85,6 +90,7 @@ jobs:
   # Job 2: Build and test images for each version
   build-test:
     needs: discover-versions
+    if: ${{ inputs.skip_tests != true }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -183,13 +189,67 @@ jobs:
           docker stop $CONTAINER_NAME 2>/dev/null || true
           docker rm $CONTAINER_NAME 2>/dev/null || true
 
-  # Job 3: Publish images to Quay.io
+  # Job 2b: Build-only and publish (skip tests) for manual workflow
+  build-only:
+    needs: discover-versions
+    if: |
+      inputs.skip_tests == true &&
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ceph_version: ${{ fromJson(needs.discover-versions.outputs.matrix) }}
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        run: |
+          echo "Building Ceph AIO for version ${{ matrix.ceph_version }} (tests skipped)"
+
+          # Generate build date in YYYYMMDD format (matching Ceph's format)
+          BUILD_DATE=$(date +%Y%m%d)
+
+          # Build with full repository path
+          docker build \
+            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
+            --file Containerfile \
+            .
+
+      - name: Log in to Quay.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Push images to registry
+        run: |
+          BUILD_DATE=$(date +%Y%m%d)
+
+          echo "Pushing images for ${{ matrix.ceph_version }} (tests skipped)"
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
+
+          echo "Successfully pushed:"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling)"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable)"
+
+  # Job 3: Publish images to Quay.io (after successful tests)
   publish:
     needs: [discover-versions, build-test]
-    runs-on: ubuntu-latest
     if: |
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         ceph_version: ${{ fromJson(needs.discover-versions.outputs.matrix) }}
