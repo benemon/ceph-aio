@@ -158,13 +158,11 @@ test_two_osds() {
         return 1
     fi
 
-    # Verify both OSDs are up
-    local osd_tree=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd tree -f json)
-    local osd0_up=$(echo "$osd_tree" | grep -o '"id":0[^}]*"status":"up"' | wc -l)
-    local osd1_up=$(echo "$osd_tree" | grep -o '"id":1[^}]*"status":"up"' | wc -l)
-
-    if [ "$osd0_up" -eq 0 ] || [ "$osd1_up" -eq 0 ]; then
-        error "Not all OSDs are up"
+    # Verify both OSDs are up (already confirmed by wait_for_cluster)
+    # Just double-check with osd stat
+    local osds_up=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd stat -f json | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2)
+    if [ "$osds_up" != "2" ]; then
+        error "Expected 2 OSDs up, got $osds_up"
         $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd tree
         return 1
     fi
