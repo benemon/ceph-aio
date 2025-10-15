@@ -107,7 +107,7 @@ test_single_osd() {
     log "Starting container with OSD_COUNT=1"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -136,7 +136,7 @@ test_two_osds() {
     log "Starting container with OSD_COUNT=2"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=2 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 150 2 || return 1
@@ -175,7 +175,7 @@ test_three_osds() {
     log "Starting container with OSD_COUNT=3"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=3 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 180 3 || return 1
@@ -211,7 +211,7 @@ test_dashboard() {
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -p 8443:8443 \
         -e OSD_COUNT=1 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -241,7 +241,7 @@ test_rgw() {
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -p 8000:8000 \
         -e OSD_COUNT=1 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -280,7 +280,7 @@ test_rbd_pool() {
     log "Starting container for RBD test"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -314,7 +314,7 @@ test_custom_credentials() {
     log "Starting container with custom credentials"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         -e DASHBOARD_USER=testadmin \
         -e DASHBOARD_PASS=TestPass123! \
         $IMAGE_TAG || return 1
@@ -338,7 +338,7 @@ test_replication() {
     log "Starting container with 3 OSDs for replication test"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=3 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 180 3 || return 1
@@ -377,7 +377,7 @@ test_security() {
     log "Starting container for security test"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
@@ -400,7 +400,7 @@ test_idempotency() {
     log "Starting container for idempotency test"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
-        -e OSD_SIZE=10M \
+        -e OSD_SIZE=25M \
         $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
