@@ -1,0 +1,252 @@
+name: Build and Publish Ceph AIO
+
+on:
+  schedule:
+    # Run weekly on Monday at 00:00 UTC to catch new Ceph releases
+    - cron: '0 0 * * 1'
+  push:
+    branches:
+      - main
+    paths:
+      - 'Containerfile'
+      - 'scripts/**'
+      - 'bootstrap.sh'
+      - 'entrypoint.sh'
+      - 'supervisord.conf'
+      - '.github/workflows/build-and-publish.yml'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      ceph_versions:
+        description: 'Comma-separated list of Ceph versions to build (e.g., v19.2.3,v18.2.7)'
+        required: false
+        type: string
+
+env:
+  REGISTRY: quay.io
+  IMAGE_NAME: benjamin_holmes/ceph-aio
+
+jobs:
+  # Job 1: Discover latest stable Ceph versions
+  discover-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.get-versions.outputs.versions }}
+      matrix: ${{ steps.get-versions.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Discover Ceph versions
+        id: get-versions
+        run: |
+          # If manual workflow with specific versions
+          if [ -n "${{ inputs.ceph_versions }}" ]; then
+            echo "Using manually specified versions: ${{ inputs.ceph_versions }}"
+            VERSIONS="${{ inputs.ceph_versions }}"
+          else
+            # Discover latest stable releases using skopeo
+            echo "Discovering latest Ceph releases from Quay.io..."
+
+            # Use skopeo to list all tags
+            echo "Fetching tags via skopeo..."
+            ALL_TAGS=$(skopeo list-tags docker://quay.io/ceph/ceph | jq -r '.Tags[]')
+
+            # Get shorthand major version tags (v19, v18, v17, etc.)
+            # These always point to the latest patch release for that major version
+            MAJOR_TAGS=$(echo "$ALL_TAGS" | grep -E '^v[0-9]+$' | sort -V)
+
+            # Get the 3 most recent major versions
+            # This ensures we cover current and previous stable releases
+            RECENT_MAJORS=$(echo "$MAJOR_TAGS" | tail -3)
+
+            if [ -z "$RECENT_MAJORS" ]; then
+              echo "Error: No major version tags found"
+              exit 1
+            fi
+
+            # Convert to comma-separated list
+            VERSIONS=$(echo "$RECENT_MAJORS" | tr '\n' ',' | sed 's/,$//')
+
+            echo "Discovered versions: $VERSIONS"
+          fi
+
+          # Convert to JSON array for matrix
+          JSON_ARRAY=$(echo "$VERSIONS" | jq -R -s -c 'split(",") | map(select(length > 0))')
+
+          echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
+          echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
+
+          echo "Final matrix: $JSON_ARRAY"
+
+  # Job 2: Build and test images for each version
+  build-test:
+    needs: discover-versions
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ceph_version: ${{ fromJson(needs.discover-versions.outputs.matrix) }}
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        run: |
+          echo "Building Ceph AIO for version ${{ matrix.ceph_version }}"
+
+          docker build \
+            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+            --tag ceph-aio:${{ matrix.ceph_version }} \
+            --tag ceph-aio:latest \
+            --file Containerfile \
+            .
+
+      - name: Run test suite
+        run: |
+          echo "Running comprehensive test suite for ${{ matrix.ceph_version }}"
+
+          # Make test script executable
+          chmod +x test-suite.sh
+
+          # Run tests
+          ./test-suite.sh
+        timeout-minutes: 30
+
+      - name: Save build artifacts on success
+        if: success()
+        run: |
+          mkdir -p /tmp/images
+          docker save ceph-aio:${{ matrix.ceph_version }} | gzip > /tmp/images/ceph-aio-${{ matrix.ceph_version }}.tar.gz
+
+      - name: Upload image artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ceph-aio-${{ matrix.ceph_version }}
+          path: /tmp/images/ceph-aio-${{ matrix.ceph_version }}.tar.gz
+          retention-days: 1
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "::group::Container logs"
+          docker logs ceph-test 2>&1 || echo "No container logs available"
+          echo "::endgroup::"
+
+          echo "::group::Supervisor logs"
+          docker exec ceph-test cat /var/log/supervisor/supervisord.log 2>&1 || echo "No supervisor logs available"
+          echo "::endgroup::"
+
+          echo "::group::Ceph status"
+          docker exec ceph-test ceph -s 2>&1 || echo "Ceph not accessible"
+          echo "::endgroup::"
+
+  # Job 3: Publish images to Quay.io
+  publish:
+    needs: [discover-versions, build-test]
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    strategy:
+      matrix:
+        ceph_version: ${{ fromJson(needs.discover-versions.outputs.matrix) }}
+
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ceph-aio-${{ matrix.ceph_version }}
+          path: /tmp/images
+
+      - name: Load Docker image
+        run: |
+          gunzip -c /tmp/images/ceph-aio-${{ matrix.ceph_version }}.tar.gz | docker load
+
+      - name: Log in to Quay.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Tag and push images
+        run: |
+          # Tag with major version (e.g., v19, v18, v17)
+          docker tag ceph-aio:${{ matrix.ceph_version }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
+
+          # Tag the most recent version as 'latest'
+          # Extract version number for comparison
+          VERSION_NUM=$(echo "${{ matrix.ceph_version }}" | sed 's/v//')
+
+          # Get all versions from the matrix to find the highest
+          ALL_VERSIONS="${{ needs.discover-versions.outputs.versions }}"
+          HIGHEST=$(echo "$ALL_VERSIONS" | tr ',' '\n' | sed 's/v//' | sort -rn | head -1)
+
+          if [ "$VERSION_NUM" == "$HIGHEST" ]; then
+            echo "Tagging v${VERSION_NUM} as 'latest'"
+            docker tag ceph-aio:${{ matrix.ceph_version }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          fi
+
+          echo "Successfully pushed ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}"
+
+      - name: Generate image summary
+        run: |
+          echo "## Published Image" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Ceph Version:** \`${{ matrix.ceph_version }}\` (tracks latest patch)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull Command:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "podman pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Available Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ matrix.ceph_version }}\` (always latest patch for this major version)" >> $GITHUB_STEP_SUMMARY
+
+          # Check if this is the latest version
+          VERSION_NUM=$(echo "${{ matrix.ceph_version }}" | sed 's/v//')
+          ALL_VERSIONS="${{ needs.discover-versions.outputs.versions }}"
+          HIGHEST=$(echo "$ALL_VERSIONS" | tr ',' '\n' | sed 's/v//' | sort -rn | head -1)
+
+          if [ "$VERSION_NUM" == "$HIGHEST" ]; then
+            echo "- \`latest\` (most recent stable release)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Job 4: Create summary report
+  summary:
+    needs: [discover-versions, build-test, publish]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate workflow summary
+        run: |
+          echo "# Ceph AIO Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow:** ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Versions Built:** ${{ needs.discover-versions.outputs.versions }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.build-test.result }}" == "success" ]; then
+            echo "✅ **All tests passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Some tests failed**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.publish.result }}" == "success" ]; then
+            echo "✅ **Images published to Quay.io**" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "ℹ️ **Images not published (PR build)**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Image publishing failed**" >> $GITHUB_STEP_SUMMARY
+          fi

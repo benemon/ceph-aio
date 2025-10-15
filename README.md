@@ -633,6 +633,36 @@ Note: The bootstrap script will skip if config already exists.
 
 To use a different Ceph version, update the `CEPH_VERSION` ARG in the Containerfile.
 
+### Pre-built Images
+
+Pre-built images are available for the 3 most recent Ceph major releases:
+
+```bash
+# Latest stable
+podman pull quay.io/benjamin_holmes/ceph-aio:latest
+
+# Specific major version (tracks latest patch automatically)
+podman pull quay.io/benjamin_holmes/ceph-aio:v19  # Latest v19.x.x
+podman pull quay.io/benjamin_holmes/ceph-aio:v18  # Latest v18.x.x
+podman pull quay.io/benjamin_holmes/ceph-aio:v17  # Latest v17.x.x
+```
+
+**Note:** The major version tags (`v19`, `v18`, `v17`) automatically track the latest patch release. When Ceph releases a new patch (e.g., v19.2.4), pulling `v19` gets you the latest version without waiting for a rebuild.
+
+Images are automatically built and tested weekly via GitHub Actions. See [CI-CD-SETUP.md](CI-CD-SETUP.md) for details on the automated build pipeline.
+
+## CI/CD Pipeline
+
+This project includes a fully automated GitHub Actions pipeline that:
+- **Dynamically discovers** the 2 most recent stable Ceph releases using `skopeo`
+- **Automatically adapts** when new major versions are released (e.g., v20.x)
+- **Runs comprehensive tests** validating all functionality for each version
+- **Publishes successful builds** to Quay.io with semantic versioning tags
+
+The pipeline runs weekly and on every code change, ensuring images are always current with the latest stable Ceph releases. **Zero maintenance required** - the workflow automatically detects and builds new versions!
+
+**For setup instructions**, see [CI-CD-SETUP.md](CI-CD-SETUP.md).
+
 ## References
 
 - [Ceph Documentation](https://docs.ceph.com/)
