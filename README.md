@@ -2,6 +2,8 @@
 
 A single-container Ceph cluster for development and testing purposes, built using `quay.io/ceph/ceph` with supervisord managing all daemons.
 
+This is designed to supercede the functionality previous found in the `ceph/daemon` container running in `demo` mode.
+
 ## Features
 
 - **Single Container**: Entire Ceph cluster runs in one container
