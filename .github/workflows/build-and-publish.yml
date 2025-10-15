@@ -87,7 +87,7 @@ jobs:
 
           echo "Final matrix: $JSON_ARRAY"
 
-  # Job 2: Build and test images for each version
+  # Job 2: Build and test images for each version (amd64 only)
   build-test:
     needs: discover-versions
     if: ${{ inputs.skip_tests != true }}
@@ -104,14 +104,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image for testing
+      - name: Build image for testing (amd64 only)
         run: |
-          echo "Building Ceph AIO for version ${{ matrix.ceph_version }}"
+          echo "Building Ceph AIO for version ${{ matrix.ceph_version }} (amd64 for testing)"
 
           # Generate build date in YYYYMMDD format (matching Ceph's format)
           BUILD_DATE=$(date +%Y%m%d)
 
-          # Build for amd64 only (for local testing on runner)
+          # Build for amd64 only (for testing on GitHub runners)
           docker buildx build \
             --platform linux/amd64 \
             --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
@@ -142,8 +142,9 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
-          # Container name matches the version being tested
-          CONTAINER_NAME="ceph-test-$(echo "${{ matrix.ceph_version }}" | sed 's/[^a-zA-Z0-9_-]/_/g')"
+          # Container name matches the version and platform being tested
+          PLATFORM_SLUG="$(echo "${{ matrix.platform }}" | sed 's/[^a-zA-Z0-9_-]/_/g')"
+          CONTAINER_NAME="ceph-test-$(echo "${{ matrix.ceph_version }}" | sed 's/[^a-zA-Z0-9_-]/_/g')-${PLATFORM_SLUG}"
 
           echo "::group::Disk usage inside container"
           docker exec $CONTAINER_NAME df -h 2>&1 || echo "Cannot check disk usage"
