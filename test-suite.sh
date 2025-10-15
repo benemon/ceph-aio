@@ -19,7 +19,8 @@ else
 fi
 
 # Image tag to test (can be overridden via IMAGE_TAG env var)
-IMAGE_TAG="${IMAGE_TAG:-latest}"
+# Supports both simple tags (ceph-aio:latest) and full paths (quay.io/user/ceph-aio:v19)
+IMAGE_TAG="${IMAGE_TAG:-ceph-aio:latest}"
 
 # Colours for output
 RED='\033[0;31m'
@@ -106,7 +107,7 @@ test_single_osd() {
     log "Starting container with OSD_COUNT=1"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
 
@@ -134,7 +135,7 @@ test_two_osds() {
     log "Starting container with OSD_COUNT=2"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=2 \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 150 2 || return 1
 
@@ -172,7 +173,7 @@ test_three_osds() {
     log "Starting container with OSD_COUNT=3"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=3 \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 180 3 || return 1
 
@@ -207,7 +208,7 @@ test_dashboard() {
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -p 8443:8443 \
         -e OSD_COUNT=1 \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
 
@@ -236,7 +237,7 @@ test_rgw() {
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -p 8000:8000 \
         -e OSD_COUNT=1 \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
 
@@ -274,7 +275,7 @@ test_rbd_pool() {
     log "Starting container for RBD test"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
 
@@ -309,7 +310,7 @@ test_custom_credentials() {
         -e OSD_COUNT=1 \
         -e DASHBOARD_USER=testadmin \
         -e DASHBOARD_PASS=TestPass123! \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
 
@@ -330,7 +331,7 @@ test_replication() {
     log "Starting container with 3 OSDs for replication test"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=3 \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 180 3 || return 1
 
@@ -368,7 +369,7 @@ test_security() {
     log "Starting container for security test"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
 
@@ -390,7 +391,7 @@ test_idempotency() {
     log "Starting container for idempotency test"
     $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
-        ceph-aio:latest || return 1
+        $IMAGE_TAG || return 1
 
     wait_for_cluster 120 1 || return 1
 
@@ -427,10 +428,10 @@ main() {
 
     # Check if image exists
     log "Using container runtime: $CONTAINER_RUNTIME"
-    log "Testing image: ceph-aio:$IMAGE_TAG"
+    log "Testing image: $IMAGE_TAG"
 
-    if ! $CONTAINER_RUNTIME image inspect ceph-aio:$IMAGE_TAG &>/dev/null; then
-        error "Image ceph-aio:$IMAGE_TAG not found. Please build it first."
+    if ! $CONTAINER_RUNTIME image inspect $IMAGE_TAG &>/dev/null; then
+        error "Image $IMAGE_TAG not found. Please build it first."
         exit 1
     fi
 

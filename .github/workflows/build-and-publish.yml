@@ -73,8 +73,8 @@ jobs:
             echo "Discovered versions: $VERSIONS"
           fi
 
-          # Convert to JSON array for matrix
-          JSON_ARRAY=$(echo "$VERSIONS" | jq -R -s -c 'split(",") | map(select(length > 0))')
+          # Convert to JSON array for matrix (trim whitespace from each version)
+          JSON_ARRAY=$(echo "$VERSIONS" | jq -R -s -c 'split(",") | map(select(length > 0) | gsub("^\\s+|\\s+$"; ""))')
 
           echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
           echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
@@ -104,10 +104,11 @@ jobs:
           # Generate build date in YYYYMMDD format (matching Ceph's format)
           BUILD_DATE=$(date +%Y%m%d)
 
+          # Build with full repository path for easier testing
           docker build \
             --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
-            --tag ceph-aio:${{ matrix.ceph_version }} \
-            --tag ceph-aio:${{ matrix.ceph_version }}-${BUILD_DATE} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
             --file Containerfile \
             .
 
@@ -118,15 +119,15 @@ jobs:
           # Make test script executable
           chmod +x test-suite.sh
 
-          # Run tests with correct image tag
-          IMAGE_TAG=${{ matrix.ceph_version }} ./test-suite.sh
+          # Run tests with full image path
+          IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} ./test-suite.sh
         timeout-minutes: 30
 
       - name: Save build artifacts on success
         if: success()
         run: |
           mkdir -p /tmp/images
-          docker save ceph-aio:${{ matrix.ceph_version }} | gzip > /tmp/images/ceph-aio-${{ matrix.ceph_version }}.tar.gz
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} | gzip > /tmp/images/ceph-aio-${{ matrix.ceph_version }}.tar.gz
 
       - name: Upload image artifact
         if: success()
@@ -180,19 +181,17 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
 
-      - name: Tag and push images
+      - name: Push images to registry
         run: |
           # Generate build date in YYYYMMDD format (matching Ceph's format)
           BUILD_DATE=$(date +%Y%m%d)
 
-          # Tag with major version (e.g., v19, v18, v17)
+          # Push major version tag (e.g., v19, v18, v17)
           # This tag always points to the latest build for this major version
-          docker tag ceph-aio:${{ matrix.ceph_version }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
 
-          # Tag with dated version (e.g., v19-20251003)
+          # Push dated version tag (e.g., v19-20251003)
           # This provides a stable, immutable reference to this specific build
-          docker tag ceph-aio:${{ matrix.ceph_version }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
 
           echo "Successfully pushed:"
