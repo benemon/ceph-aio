@@ -101,10 +101,13 @@ jobs:
         run: |
           echo "Building Ceph AIO for version ${{ matrix.ceph_version }}"
 
+          # Generate build date in YYYYMMDD format (matching Ceph's format)
+          BUILD_DATE=$(date +%Y%m%d)
+
           docker build \
             --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
             --tag ceph-aio:${{ matrix.ceph_version }} \
-            --tag ceph-aio:latest \
+            --tag ceph-aio:${{ matrix.ceph_version }}-${BUILD_DATE} \
             --file Containerfile \
             .
 
@@ -115,8 +118,8 @@ jobs:
           # Make test script executable
           chmod +x test-suite.sh
 
-          # Run tests
-          ./test-suite.sh
+          # Run tests with correct image tag
+          IMAGE_TAG=${{ matrix.ceph_version }} ./test-suite.sh
         timeout-minutes: 30
 
       - name: Save build artifacts on success
@@ -179,48 +182,44 @@ jobs:
 
       - name: Tag and push images
         run: |
+          # Generate build date in YYYYMMDD format (matching Ceph's format)
+          BUILD_DATE=$(date +%Y%m%d)
+
           # Tag with major version (e.g., v19, v18, v17)
+          # This tag always points to the latest build for this major version
           docker tag ceph-aio:${{ matrix.ceph_version }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
 
-          # Tag the most recent version as 'latest'
-          # Extract version number for comparison
-          VERSION_NUM=$(echo "${{ matrix.ceph_version }}" | sed 's/v//')
+          # Tag with dated version (e.g., v19-20251003)
+          # This provides a stable, immutable reference to this specific build
+          docker tag ceph-aio:${{ matrix.ceph_version }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
 
-          # Get all versions from the matrix to find the highest
-          ALL_VERSIONS="${{ needs.discover-versions.outputs.versions }}"
-          HIGHEST=$(echo "$ALL_VERSIONS" | tr ',' '\n' | sed 's/v//' | sort -rn | head -1)
-
-          if [ "$VERSION_NUM" == "$HIGHEST" ]; then
-            echo "Tagging v${VERSION_NUM} as 'latest'"
-            docker tag ceph-aio:${{ matrix.ceph_version }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          fi
-
-          echo "Successfully pushed ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}"
+          echo "Successfully pushed:"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling)"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable)"
 
       - name: Generate image summary
         run: |
+          BUILD_DATE=$(date +%Y%m%d)
+
           echo "## Published Image" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Ceph Version:** \`${{ matrix.ceph_version }}\` (tracks latest patch)" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Date:** \`${BUILD_DATE}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Pull Command:**" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull Commands:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Rolling tag (always latest build for this major version)" >> $GITHUB_STEP_SUMMARY
           echo "podman pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Immutable dated tag (specific build)" >> $GITHUB_STEP_SUMMARY
+          echo "podman pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Available Tags:**" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ matrix.ceph_version }}\` (always latest patch for this major version)" >> $GITHUB_STEP_SUMMARY
-
-          # Check if this is the latest version
-          VERSION_NUM=$(echo "${{ matrix.ceph_version }}" | sed 's/v//')
-          ALL_VERSIONS="${{ needs.discover-versions.outputs.versions }}"
-          HIGHEST=$(echo "$ALL_VERSIONS" | tr ',' '\n' | sed 's/v//' | sort -rn | head -1)
-
-          if [ "$VERSION_NUM" == "$HIGHEST" ]; then
-            echo "- \`latest\` (most recent stable release)" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "- \`${{ matrix.ceph_version }}\` (rolling - always latest build)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ matrix.ceph_version }}-${BUILD_DATE}\` (immutable - this specific build)" >> $GITHUB_STEP_SUMMARY
 
   # Job 4: Create summary report
   summary:

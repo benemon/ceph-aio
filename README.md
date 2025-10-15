@@ -635,19 +635,23 @@ To use a different Ceph version, update the `CEPH_VERSION` ARG in the Containerf
 
 ### Pre-built Images
 
-Pre-built images are available for the 3 most recent Ceph major releases:
+Pre-built images are available for the 3 most recent Ceph major releases with two tagging strategies:
 
 ```bash
-# Latest stable
-podman pull quay.io/benjamin_holmes/ceph-aio:latest
+# Rolling tags (always latest build for this major version)
+podman pull quay.io/benjamin_holmes/ceph-aio:v19  # Latest v19.x build
+podman pull quay.io/benjamin_holmes/ceph-aio:v18  # Latest v18.x build
+podman pull quay.io/benjamin_holmes/ceph-aio:v17  # Latest v17.x build
 
-# Specific major version (tracks latest patch automatically)
-podman pull quay.io/benjamin_holmes/ceph-aio:v19  # Latest v19.x.x
-podman pull quay.io/benjamin_holmes/ceph-aio:v18  # Latest v18.x.x
-podman pull quay.io/benjamin_holmes/ceph-aio:v17  # Latest v17.x.x
+# Immutable dated tags (specific build, never changes)
+podman pull quay.io/benjamin_holmes/ceph-aio:v19-20251003  # Build from Oct 3, 2025
+podman pull quay.io/benjamin_holmes/ceph-aio:v18-20250915  # Build from Sep 15, 2025
 ```
 
-**Note:** The major version tags (`v19`, `v18`, `v17`) automatically track the latest patch release. When Ceph releases a new patch (e.g., v19.2.4), pulling `v19` gets you the latest version without waiting for a rebuild.
+**Tagging Strategy:**
+- **Rolling tags** (`v19`, `v18`, etc.): Best for development - automatically updated with each new build
+- **Dated tags** (`v19-20251003`): Best for production - immutable reference to specific build date
+- Build dates use format `YYYYMMDD` matching Ceph's convention
 
 Images are automatically built and tested weekly via GitHub Actions. See [CI-CD-SETUP.md](CI-CD-SETUP.md) for details on the automated build pipeline.
 

@@ -8,6 +8,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_RESULTS=()
 FAILED_TESTS=()
 
+# Detect container runtime (docker or $CONTAINER_RUNTIME)
+if command -v docker &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+elif command -v $CONTAINER_RUNTIME &> /dev/null; then
+    CONTAINER_RUNTIME="$CONTAINER_RUNTIME"
+else
+    echo "ERROR: Neither docker nor $CONTAINER_RUNTIME found"
+    exit 1
+fi
+
+# Image tag to test (can be overridden via IMAGE_TAG env var)
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+
 # Colours for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,8 +46,8 @@ success() {
 # Cleanup function
 cleanup() {
     log "Cleaning up test containers..."
-    podman stop ceph-test 2>/dev/null || true
-    podman rm ceph-test 2>/dev/null || true
+    $CONTAINER_RUNTIME stop ceph-test 2>/dev/null || true
+    $CONTAINER_RUNTIME rm ceph-test 2>/dev/null || true
 }
 
 # Trap cleanup on exit
@@ -67,12 +80,12 @@ wait_for_cluster() {
     log "Waiting for cluster to be healthy (max ${max_wait}s)..."
 
     while [ $elapsed -lt $max_wait ]; do
-        if podman exec ceph-test ceph -s &>/dev/null; then
+        if $CONTAINER_RUNTIME exec ceph-test ceph -s &>/dev/null; then
             # Check if OSDs are up
-            local osds_up=$(podman exec ceph-test ceph -s -f json 2>/dev/null | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2 || echo 0)
+            local osds_up=$($CONTAINER_RUNTIME exec ceph-test ceph -s -f json 2>/dev/null | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2 || echo 0)
             if [ "$osds_up" -eq "$osd_count" ]; then
                 # Check health status
-                local health=$(podman exec ceph-test ceph health 2>/dev/null || echo "")
+                local health=$($CONTAINER_RUNTIME exec ceph-test ceph health 2>/dev/null || echo "")
                 if [ "$health" = "HEALTH_OK" ]; then
                     success "Cluster is healthy with $osds_up OSDs"
                     return 0
@@ -84,31 +97,31 @@ wait_for_cluster() {
     done
 
     error "Cluster did not become healthy within ${max_wait}s"
-    podman exec ceph-test ceph -s || true
+    $CONTAINER_RUNTIME exec ceph-test ceph -s || true
     return 1
 }
 
 # Test 1: Single OSD configuration
 test_single_osd() {
     log "Starting container with OSD_COUNT=1"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
         ceph-aio:latest || return 1
 
     wait_for_cluster 120 1 || return 1
 
     # Verify pool size
-    local size=$(podman exec ceph-test ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
+    local size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
     if [ "$size" != "1" ]; then
         error "Expected pool size 1, got $size"
         return 1
     fi
 
     # Verify health is OK (warnings should be silenced)
-    local health=$(podman exec ceph-test ceph health)
+    local health=$($CONTAINER_RUNTIME exec ceph-test ceph health)
     if [ "$health" != "HEALTH_OK" ]; then
         error "Expected HEALTH_OK, got $health"
-        podman exec ceph-test ceph health detail
+        $CONTAINER_RUNTIME exec ceph-test ceph health detail
         return 1
     fi
 
@@ -119,34 +132,34 @@ test_single_osd() {
 # Test 2: Two OSD configuration
 test_two_osds() {
     log "Starting container with OSD_COUNT=2"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=2 \
         ceph-aio:latest || return 1
 
     wait_for_cluster 150 2 || return 1
 
     # Verify pool size
-    local size=$(podman exec ceph-test ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
+    local size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
     if [ "$size" != "2" ]; then
         error "Expected pool size 2, got $size"
         return 1
     fi
 
     # Verify min_size
-    local min_size=$(podman exec ceph-test ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
+    local min_size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
     if [ "$min_size" != "1" ]; then
         error "Expected min_size 1, got $min_size"
         return 1
     fi
 
     # Verify both OSDs are up
-    local osd_tree=$(podman exec ceph-test ceph osd tree -f json)
+    local osd_tree=$($CONTAINER_RUNTIME exec ceph-test ceph osd tree -f json)
     local osd0_up=$(echo "$osd_tree" | grep -o '"id":0[^}]*"status":"up"' | wc -l)
     local osd1_up=$(echo "$osd_tree" | grep -o '"id":1[^}]*"status":"up"' | wc -l)
 
     if [ "$osd0_up" -eq 0 ] || [ "$osd1_up" -eq 0 ]; then
         error "Not all OSDs are up"
-        podman exec ceph-test ceph osd tree
+        $CONTAINER_RUNTIME exec ceph-test ceph osd tree
         return 1
     fi
 
@@ -157,28 +170,28 @@ test_two_osds() {
 # Test 3: Three OSD configuration
 test_three_osds() {
     log "Starting container with OSD_COUNT=3"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=3 \
         ceph-aio:latest || return 1
 
     wait_for_cluster 180 3 || return 1
 
     # Verify pool size
-    local size=$(podman exec ceph-test ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
+    local size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
     if [ "$size" != "3" ]; then
         error "Expected pool size 3, got $size"
         return 1
     fi
 
     # Verify min_size
-    local min_size=$(podman exec ceph-test ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
+    local min_size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
     if [ "$min_size" != "2" ]; then
         error "Expected min_size 2, got $min_size"
         return 1
     fi
 
     # Verify all three OSDs are up
-    local osds_up=$(podman exec ceph-test ceph osd stat -f json | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2)
+    local osds_up=$($CONTAINER_RUNTIME exec ceph-test ceph osd stat -f json | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2)
     if [ "$osds_up" != "3" ]; then
         error "Expected 3 OSDs up, got $osds_up"
         return 1
@@ -191,7 +204,7 @@ test_three_osds() {
 # Test 4: Dashboard accessibility
 test_dashboard() {
     log "Starting container for dashboard test"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -p 8443:8443 \
         -e OSD_COUNT=1 \
         ceph-aio:latest || return 1
@@ -199,13 +212,13 @@ test_dashboard() {
     wait_for_cluster 120 1 || return 1
 
     # Check if dashboard is enabled
-    if ! podman exec ceph-test ceph mgr module ls | grep -q '"dashboard"'; then
+    if ! $CONTAINER_RUNTIME exec ceph-test ceph mgr module ls | grep -q '"dashboard"'; then
         error "Dashboard module not found"
         return 1
     fi
 
     # Check dashboard URL is configured
-    local dashboard_url=$(podman exec ceph-test ceph mgr services -f json | grep -o '"dashboard":"[^"]*"' | cut -d'"' -f4)
+    local dashboard_url=$($CONTAINER_RUNTIME exec ceph-test ceph mgr services -f json | grep -o '"dashboard":"[^"]*"' | cut -d'"' -f4)
     if [ -z "$dashboard_url" ]; then
         error "Dashboard URL not configured"
         return 1
@@ -220,7 +233,7 @@ test_dashboard() {
 # Test 5: RGW functionality
 test_rgw() {
     log "Starting container for RGW test"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -p 8000:8000 \
         -e OSD_COUNT=1 \
         ceph-aio:latest || return 1
@@ -228,20 +241,20 @@ test_rgw() {
     wait_for_cluster 120 1 || return 1
 
     # Check RGW daemon is running
-    if ! podman exec ceph-test supervisorctl status ceph-rgw | grep -q RUNNING; then
+    if ! $CONTAINER_RUNTIME exec ceph-test supervisorctl status ceph-rgw | grep -q RUNNING; then
         error "RGW daemon not running"
-        podman exec ceph-test supervisorctl status
+        $CONTAINER_RUNTIME exec ceph-test supervisorctl status
         return 1
     fi
 
     # Check RGW realm exists
-    if ! podman exec ceph-test radosgw-admin realm list | grep -q "default"; then
+    if ! $CONTAINER_RUNTIME exec ceph-test radosgw-admin realm list | grep -q "default"; then
         error "RGW realm not configured"
         return 1
     fi
 
     # Create test user
-    if ! podman exec ceph-test radosgw-admin user create \
+    if ! $CONTAINER_RUNTIME exec ceph-test radosgw-admin user create \
         --uid=testuser \
         --display-name="Test User" \
         --access-key=test \
@@ -259,26 +272,26 @@ test_rgw() {
 # Test 6: RBD pool functionality
 test_rbd_pool() {
     log "Starting container for RBD test"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
         ceph-aio:latest || return 1
 
     wait_for_cluster 120 1 || return 1
 
     # Check RBD pool exists
-    if ! podman exec ceph-test ceph osd pool ls | grep -q "^rbd$"; then
+    if ! $CONTAINER_RUNTIME exec ceph-test ceph osd pool ls | grep -q "^rbd$"; then
         error "RBD pool not found"
         return 1
     fi
 
     # Create test image
-    if ! podman exec ceph-test rbd create testimage --size 100M --pool rbd &>/dev/null; then
+    if ! $CONTAINER_RUNTIME exec ceph-test rbd create testimage --size 100M --pool rbd &>/dev/null; then
         error "Failed to create RBD image"
         return 1
     fi
 
     # Verify image exists
-    if ! podman exec ceph-test rbd ls rbd | grep -q "testimage"; then
+    if ! $CONTAINER_RUNTIME exec ceph-test rbd ls rbd | grep -q "testimage"; then
         error "RBD image not listed"
         return 1
     fi
@@ -292,7 +305,7 @@ test_rbd_pool() {
 # Test 7: Custom dashboard credentials
 test_custom_credentials() {
     log "Starting container with custom credentials"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
         -e DASHBOARD_USER=testadmin \
         -e DASHBOARD_PASS=TestPass123! \
@@ -301,7 +314,7 @@ test_custom_credentials() {
     wait_for_cluster 120 1 || return 1
 
     # Verify custom user exists (indirect check via dashboard services)
-    if ! podman exec ceph-test ceph mgr services | grep -q "dashboard"; then
+    if ! $CONTAINER_RUNTIME exec ceph-test ceph mgr services | grep -q "dashboard"; then
         error "Dashboard not configured with custom credentials"
         return 1
     fi
@@ -315,30 +328,30 @@ test_custom_credentials() {
 # Test 8: Replication with object writes
 test_replication() {
     log "Starting container with 3 OSDs for replication test"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=3 \
         ceph-aio:latest || return 1
 
     wait_for_cluster 180 3 || return 1
 
     # Write test object
-    if ! echo "test data" | podman exec -i ceph-test rados put testobj - -p rbd; then
+    if ! echo "test data" | $CONTAINER_RUNTIME exec -i ceph-test rados put testobj - -p rbd; then
         error "Failed to write test object"
         return 1
     fi
 
     # Verify object exists
-    if ! podman exec ceph-test rados -p rbd ls | grep -q "testobj"; then
+    if ! $CONTAINER_RUNTIME exec ceph-test rados -p rbd ls | grep -q "testobj"; then
         error "Test object not found"
         return 1
     fi
 
     # Check object mapping (shows which OSDs have the object)
-    local osd_map=$(podman exec ceph-test ceph osd map rbd testobj)
+    local osd_map=$($CONTAINER_RUNTIME exec ceph-test ceph osd map rbd testobj)
     log "Object mapping: $osd_map"
 
     # Read back the object
-    local data=$(podman exec ceph-test rados get testobj - -p rbd)
+    local data=$($CONTAINER_RUNTIME exec ceph-test rados get testobj - -p rbd)
     if [ "$data" != "test data" ]; then
         error "Object data mismatch"
         return 1
@@ -353,14 +366,14 @@ test_replication() {
 # Test 9: Security configuration
 test_security() {
     log "Starting container for security test"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
         ceph-aio:latest || return 1
 
     wait_for_cluster 120 1 || return 1
 
     # Verify insecure global_id reclaim is disabled
-    local auth_setting=$(podman exec ceph-test ceph config get mon auth_allow_insecure_global_id_reclaim)
+    local auth_setting=$($CONTAINER_RUNTIME exec ceph-test ceph config get mon auth_allow_insecure_global_id_reclaim)
     if [ "$auth_setting" != "false" ]; then
         error "Insecure global_id reclaim should be disabled, got: $auth_setting"
         return 1
@@ -375,24 +388,24 @@ test_security() {
 # Test 10: Idempotency (restart container)
 test_idempotency() {
     log "Starting container for idempotency test"
-    podman run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name ceph-test \
         -e OSD_COUNT=1 \
         ceph-aio:latest || return 1
 
     wait_for_cluster 120 1 || return 1
 
     # Get initial FSID
-    local fsid1=$(podman exec ceph-test ceph fsid)
+    local fsid1=$($CONTAINER_RUNTIME exec ceph-test ceph fsid)
 
     # Restart container
     log "Restarting container..."
-    podman restart ceph-test
+    $CONTAINER_RUNTIME restart ceph-test
 
     sleep 10
     wait_for_cluster 120 1 || return 1
 
     # Get FSID after restart
-    local fsid2=$(podman exec ceph-test ceph fsid)
+    local fsid2=$($CONTAINER_RUNTIME exec ceph-test ceph fsid)
 
     if [ "$fsid1" != "$fsid2" ]; then
         error "FSID changed after restart: $fsid1 -> $fsid2"
@@ -413,8 +426,11 @@ main() {
     log ""
 
     # Check if image exists
-    if ! podman image exists ceph-aio:latest; then
-        error "Image ceph-aio:latest not found. Please build it first."
+    log "Using container runtime: $CONTAINER_RUNTIME"
+    log "Testing image: ceph-aio:$IMAGE_TAG"
+
+    if ! $CONTAINER_RUNTIME image inspect ceph-aio:$IMAGE_TAG &>/dev/null; then
+        error "Image ceph-aio:$IMAGE_TAG not found. Please build it first."
         exit 1
     fi
 

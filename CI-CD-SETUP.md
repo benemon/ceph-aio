@@ -5,10 +5,10 @@ This document explains how to set up the GitHub Actions pipeline that automatica
 ## Overview
 
 The CI/CD pipeline automatically:
-1. Discovers the latest stable Ceph releases (Squid v19.x and Reef v18.x)
-2. Builds container images for each version
-3. Runs comprehensive tests on each build
-4. Publishes successful builds to Quay.io with appropriate tags
+1. Discovers the **3 most recent** Ceph major releases using `skopeo` (e.g., v19, v18, v17)
+2. Builds container images for each major version (using shorthand tags that auto-track latest patches)
+3. Runs comprehensive tests on each build (10 test scenarios covering all features)
+4. Publishes successful builds to Quay.io with version tags and `latest` tag
 
 ## Prerequisites
 
@@ -81,7 +81,7 @@ You can manually trigger builds with custom versions:
 1. Go to **Actions** tab in GitHub
 2. Select **Build and Publish Ceph AIO** workflow
 3. Click **Run workflow**
-4. Optionally specify custom versions (e.g., `v19.2.3,v18.2.7`)
+4. Optionally specify custom versions (e.g., `v19,v18,v17` or `v19.2.3,v18.2.7` for specific patches)
 
 ## Workflow Jobs
 
@@ -163,11 +163,10 @@ For each discovered version:
 ### Job 3: Publish
 Only runs on successful builds from main branch or scheduled runs:
 - Loads tested image from artifacts
-- Authenticates with Quay.io
-- Tags and pushes images with multiple tags:
-  - Full version: `v19.2.3`
-  - Major.minor: `v19.2`
-  - Latest (for Squid only): `latest`
+- Authenticates with Quay.io using robot account credentials
+- Tags and pushes images with two tag formats:
+  - **Rolling tag**: Major version only (e.g., `v19`) - always points to latest build
+  - **Immutable tag**: Major version + build date (e.g., `v19-20251003`) - permanent reference
 
 ### Job 4: Summary
 Generates a workflow summary showing:
@@ -177,32 +176,63 @@ Generates a workflow summary showing:
 
 ## Image Tags
 
-Published images are tagged as follows:
+Published images use a dual tagging strategy:
 
-| Tag Pattern | Example | Description |
-|-------------|---------|-------------|
-| `vX` | `v19`, `v18`, `v17` | Major version (tracks latest patch automatically) |
-| `latest` | `latest` | Most recent stable release |
+| Tag Pattern | Example | Description | When to Use |
+|-------------|---------|-------------|-------------|
+| `vX` | `v19`, `v18`, `v17` | Rolling tag - always latest build for this major version | Development, testing, general use |
+| `vX-YYYYMMDD` | `v19-20251003` | Immutable tag - specific build date | Production, reproducible environments |
 
-**Note:** The shorthand tags (`v19`, `v18`, etc.) automatically track the latest patch release. When Ceph releases v19.2.4, the `v19` tag automatically points to it without requiring a rebuild.
+**Tag Behavior:**
+- **Rolling tags** (`v19`, `v18`, etc.) get updated with each new build on that version
+- **Dated tags** (`v19-20251003`) never change - permanent reference to a specific build
+- Build date format matches Ceph's convention: `YYYYMMDD`
+
+**Example Scenario:**
+```bash
+# First build on 2025-10-03
+v19           → points to build from 2025-10-03
+v19-20251003  → permanent reference to this build
+
+# New build on 2025-10-15
+v19           → now points to build from 2025-10-15
+v19-20251003  → still points to original build (immutable)
+v19-20251015  → new permanent reference
+```
 
 ## Usage Examples
 
-### Pull Latest Stable
+### Pull Latest Build (Rolling Tag)
 ```bash
-podman pull quay.io/benjamin_holmes/ceph-aio:latest
-```
-
-### Pull Specific Major Version (auto-updates to latest patch)
-```bash
-# Always gets latest v19.x.x patch
+# Latest v19.x build - tag updates with each new build
 podman pull quay.io/benjamin_holmes/ceph-aio:v19
 
-# Always gets latest v18.x.x patch
+# Latest v18.x build
 podman pull quay.io/benjamin_holmes/ceph-aio:v18
+```
 
-# Always gets latest v17.x.x patch
-podman pull quay.io/benjamin_holmes/ceph-aio:v17
+### Pull Specific Build (Immutable Tag)
+```bash
+# Exact build from October 3rd, 2025 - never changes
+podman pull quay.io/benjamin_holmes/ceph-aio:v19-20251003
+
+# Exact build from September 15th, 2025
+podman pull quay.io/benjamin_holmes/ceph-aio:v18-20250915
+```
+
+### Run Container
+```bash
+# Using rolling tag (development)
+podman run -d --name ceph \
+  -p 8443:8443 -p 8000:8000 \
+  -e OSD_COUNT=3 \
+  quay.io/benjamin_holmes/ceph-aio:v19
+
+# Using immutable tag (production)
+podman run -d --name ceph \
+  -p 8443:8443 -p 8000:8000 \
+  -e OSD_COUNT=3 \
+  quay.io/benjamin_holmes/ceph-aio:v19-20251003
 ```
 
 ## Test Suite
@@ -305,19 +335,19 @@ podman build \
 
 **No manual maintenance required!** The workflow automatically:
 
-1. **Detects new major releases**: When Ceph releases a new stable version (e.g., v20.x) and marks it as "Active" on their releases page, the pipeline will automatically discover and build it
-2. **Stops building EOL versions**: When a version is no longer marked as "Active" in the Ceph documentation, the pipeline will automatically stop building it
-3. **Tracks latest patches**: Always builds the latest patch release for each active major version
+1. **Detects new major releases**: When Ceph publishes a new major version to Quay.io (e.g., v20), the pipeline automatically discovers and builds it on the next run
+2. **Maintains 3 most recent versions**: Always builds the 3 most recent major versions, providing coverage for current and previous stable releases
+3. **Auto-tracks patches**: Uses shorthand tags (`v19`, `v18`) that automatically resolve to the latest patch without requiring rebuilds
 
 ### Manual Override
 
-If you need to build specific versions regardless of official status:
+If you need to build specific versions:
 
-```bash
-# Via GitHub Actions UI
-Go to Actions → Build and Publish Ceph AIO → Run workflow
-Enter versions: v19.2.3,v18.2.7,v17.2.9
-```
+**Via GitHub Actions UI:**
+1. Go to **Actions** → **Build and Publish Ceph AIO** → **Run workflow**
+2. Enter versions in the input field:
+   - Shorthand tags: `v19,v18,v17` (recommended - auto-tracks patches)
+   - Specific patches: `v19.2.3,v18.2.7` (locks to exact versions)
 
 ### How It Works
 
@@ -347,13 +377,16 @@ To add new tests:
 
 ### GitHub Actions
 - Free for public repositories (2000 minutes/month for private repos)
-- Each build takes approximately 30-40 minutes
-- Weekly schedule + occasional manual runs should stay within free tier
+- Each version build takes approximately 30-40 minutes
+- 3 versions × 40 minutes = ~120 minutes per run
+- Weekly schedule + occasional pushes should stay well within free tier
+- Estimated monthly usage: ~500-600 minutes (25-30% of free tier)
 
 ### Quay.io
 - Free for public repositories
-- Storage scales with number of tags kept
-- Consider retention policies to manage storage
+- Only 4 tags total: `v19`, `v18`, `v17`, `latest`
+- Minimal storage footprint (~2-3GB per version × 3 = 6-9GB total)
+- Well within free tier limits
 
 ## Security Best Practices
 
@@ -386,9 +419,38 @@ To add new tests:
 - Compressed images should be <2GB each
 - Verify sufficient storage quota
 
+## Quick Reference
+
+### Current Build Configuration
+- **Versions built**: 3 most recent major versions (currently v19, v18, v17)
+- **Discovery method**: `skopeo list-tags` filtering for `vX` tags
+- **Base images**: `quay.io/ceph/ceph:v19`, `quay.io/ceph/ceph:v18`, `quay.io/ceph/ceph:v17`
+- **Published tags**: `v19`, `v18`, `v17`, `latest`
+- **Test suite**: 10 comprehensive tests per version
+- **Build frequency**: Weekly + on code changes
+- **Estimated runtime**: ~120 minutes per full run
+
+### Tag Behavior
+- `v19` → Always latest v19.x.x patch (auto-updated by Quay.io)
+- `v18` → Always latest v18.x.x patch (auto-updated by Quay.io)
+- `v17` → Always latest v17.x.x patch (auto-updated by Quay.io)
+- `latest` → Points to highest major version (currently v19)
+
+### When New Versions Release
+**Patch releases** (e.g., v19.2.3 → v19.2.4):
+- Quay.io automatically updates the `v19` tag
+- Your images inherit this without rebuilding
+- Users pulling `v19` get the latest patch immediately
+
+**Major releases** (e.g., v20 published):
+- Next weekly run automatically detects v20
+- Builds v20, v19, v18 (drops v17)
+- Updates `latest` to point to v20
+
 ## References
 
 - [Ceph Releases](https://docs.ceph.com/en/latest/releases/)
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [Quay.io Documentation](https://docs.quay.io/)
+- [Skopeo Documentation](https://github.com/containers/skopeo)
 - [Docker Build Documentation](https://docs.docker.com/engine/reference/commandline/build/)
