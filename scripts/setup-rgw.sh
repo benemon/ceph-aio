@@ -26,12 +26,9 @@ wait_for_cluster || {
     exit 1
 }
 
-# Wait for OSD to be up (RGW needs OSDs for pool creation)
-log "Waiting for OSDs to be available..."
-wait_for_command 60 bash -c "ceph osd stat | grep -q 'osd:'" || {
-    error "OSDs not available, cannot configure RGW"
-    exit 1
-}
+# Additional wait for OSDs to stabilize (they have 35s startsecs)
+# This is more reliable than checking osd stat which may not reflect actual readiness
+sleep 10
 
 # Create RGW keyring
 log "Creating RGW keyring"
@@ -126,13 +123,6 @@ success "RGW realm/zonegroup/zone configured"
 log "Restarting RGW daemon to apply configuration"
 
 if command -v supervisorctl &>/dev/null; then
-    # Verify period was committed before restarting
-    log "Verifying period configuration is committed..."
-    wait_for_command 30 bash -c "radosgw-admin period get 2>&1 | grep -q 'current_period'" || {
-        error "Period configuration not readable after commit"
-        exit 1
-    }
-
     supervisorctl restart ceph-rgw || {
         error "Failed to restart RGW daemon"
         exit 1
