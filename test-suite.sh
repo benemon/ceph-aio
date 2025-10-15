@@ -22,6 +22,10 @@ fi
 # Supports both simple tags (ceph-aio:latest) and full paths (quay.io/user/ceph-aio:v19)
 IMAGE_TAG="${IMAGE_TAG:-ceph-aio:latest}"
 
+# Container name (unique per image to avoid conflicts in parallel CI runs)
+# Extract version from image tag (e.g., "v19" from "quay.io/user/ceph-aio:v19")
+CONTAINER_NAME="ceph-test-$(echo "$IMAGE_TAG" | sed 's/.*://;s/[^a-zA-Z0-9_-]/_/g')"
+
 # Colours for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -47,8 +51,8 @@ success() {
 # Cleanup function (only cleans up on success)
 cleanup() {
     log "Cleaning up test containers..."
-    $CONTAINER_RUNTIME stop ceph-test 2>/dev/null || true
-    $CONTAINER_RUNTIME rm ceph-test 2>/dev/null || true
+    $CONTAINER_RUNTIME stop $CONTAINER_NAME 2>/dev/null || true
+    $CONTAINER_RUNTIME rm $CONTAINER_NAME 2>/dev/null || true
 }
 
 # Test function wrapper
@@ -78,12 +82,12 @@ wait_for_cluster() {
     log "Waiting for cluster to be healthy (max ${max_wait}s)..."
 
     while [ $elapsed -lt $max_wait ]; do
-        if $CONTAINER_RUNTIME exec ceph-test ceph -s &>/dev/null; then
+        if $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph -s &>/dev/null; then
             # Check if OSDs are up
-            local osds_up=$($CONTAINER_RUNTIME exec ceph-test ceph -s -f json 2>/dev/null | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2 || echo 0)
+            local osds_up=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph -s -f json 2>/dev/null | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2 || echo 0)
             if [ "$osds_up" -eq "$osd_count" ]; then
                 # Check health status
-                local health=$($CONTAINER_RUNTIME exec ceph-test ceph health 2>/dev/null || echo "")
+                local health=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph health 2>/dev/null || echo "")
                 if [ "$health" = "HEALTH_OK" ]; then
                     success "Cluster is healthy with $osds_up OSDs"
                     return 0
@@ -95,14 +99,14 @@ wait_for_cluster() {
     done
 
     error "Cluster did not become healthy within ${max_wait}s"
-    $CONTAINER_RUNTIME exec ceph-test ceph -s || true
+    $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph -s || true
     return 1
 }
 
 # Test 1: Single OSD configuration
 test_single_osd() {
     log "Starting container with OSD_COUNT=1"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
         $IMAGE_TAG || return 1
@@ -110,17 +114,17 @@ test_single_osd() {
     wait_for_cluster 120 1 || return 1
 
     # Verify pool size
-    local size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
+    local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
     if [ "$size" != "1" ]; then
         error "Expected pool size 1, got $size"
         return 1
     fi
 
     # Verify health is OK (warnings should be silenced)
-    local health=$($CONTAINER_RUNTIME exec ceph-test ceph health)
+    local health=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph health)
     if [ "$health" != "HEALTH_OK" ]; then
         error "Expected HEALTH_OK, got $health"
-        $CONTAINER_RUNTIME exec ceph-test ceph health detail
+        $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph health detail
         return 1
     fi
 
@@ -131,7 +135,7 @@ test_single_osd() {
 # Test 2: Two OSD configuration
 test_two_osds() {
     log "Starting container with OSD_COUNT=2"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=2 \
         -e OSD_SIZE=1G \
         $IMAGE_TAG || return 1
@@ -139,27 +143,27 @@ test_two_osds() {
     wait_for_cluster 150 2 || return 1
 
     # Verify pool size
-    local size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
+    local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
     if [ "$size" != "2" ]; then
         error "Expected pool size 2, got $size"
         return 1
     fi
 
     # Verify min_size
-    local min_size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
+    local min_size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
     if [ "$min_size" != "1" ]; then
         error "Expected min_size 1, got $min_size"
         return 1
     fi
 
     # Verify both OSDs are up
-    local osd_tree=$($CONTAINER_RUNTIME exec ceph-test ceph osd tree -f json)
+    local osd_tree=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd tree -f json)
     local osd0_up=$(echo "$osd_tree" | grep -o '"id":0[^}]*"status":"up"' | wc -l)
     local osd1_up=$(echo "$osd_tree" | grep -o '"id":1[^}]*"status":"up"' | wc -l)
 
     if [ "$osd0_up" -eq 0 ] || [ "$osd1_up" -eq 0 ]; then
         error "Not all OSDs are up"
-        $CONTAINER_RUNTIME exec ceph-test ceph osd tree
+        $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd tree
         return 1
     fi
 
@@ -170,7 +174,7 @@ test_two_osds() {
 # Test 3: Three OSD configuration
 test_three_osds() {
     log "Starting container with OSD_COUNT=3"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=3 \
         -e OSD_SIZE=1G \
         $IMAGE_TAG || return 1
@@ -178,21 +182,21 @@ test_three_osds() {
     wait_for_cluster 180 3 || return 1
 
     # Verify pool size
-    local size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
+    local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
     if [ "$size" != "3" ]; then
         error "Expected pool size 3, got $size"
         return 1
     fi
 
     # Verify min_size
-    local min_size=$($CONTAINER_RUNTIME exec ceph-test ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
+    local min_size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
     if [ "$min_size" != "2" ]; then
         error "Expected min_size 2, got $min_size"
         return 1
     fi
 
     # Verify all three OSDs are up
-    local osds_up=$($CONTAINER_RUNTIME exec ceph-test ceph osd stat -f json | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2)
+    local osds_up=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd stat -f json | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2)
     if [ "$osds_up" != "3" ]; then
         error "Expected 3 OSDs up, got $osds_up"
         return 1
@@ -205,7 +209,7 @@ test_three_osds() {
 # Test 4: Dashboard accessibility
 test_dashboard() {
     log "Starting container for dashboard test"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -p 8443:8443 \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
@@ -214,13 +218,13 @@ test_dashboard() {
     wait_for_cluster 120 1 || return 1
 
     # Check if dashboard is enabled
-    if ! $CONTAINER_RUNTIME exec ceph-test ceph mgr module ls | grep -q '"dashboard"'; then
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr module ls | grep -q '"dashboard"'; then
         error "Dashboard module not found"
         return 1
     fi
 
     # Check dashboard URL is configured
-    local dashboard_url=$($CONTAINER_RUNTIME exec ceph-test ceph mgr services -f json | grep -o '"dashboard":"[^"]*"' | cut -d'"' -f4)
+    local dashboard_url=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services -f json | grep -o '"dashboard":"[^"]*"' | cut -d'"' -f4)
     if [ -z "$dashboard_url" ]; then
         error "Dashboard URL not configured"
         return 1
@@ -235,7 +239,7 @@ test_dashboard() {
 # Test 5: RGW functionality
 test_rgw() {
     log "Starting container for RGW test"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -p 8000:8000 \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
@@ -244,20 +248,20 @@ test_rgw() {
     wait_for_cluster 120 1 || return 1
 
     # Check RGW daemon is running
-    if ! $CONTAINER_RUNTIME exec ceph-test supervisorctl status ceph-rgw | grep -q RUNNING; then
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME supervisorctl status ceph-rgw | grep -q RUNNING; then
         error "RGW daemon not running"
-        $CONTAINER_RUNTIME exec ceph-test supervisorctl status
+        $CONTAINER_RUNTIME exec $CONTAINER_NAME supervisorctl status
         return 1
     fi
 
     # Check RGW realm exists
-    if ! $CONTAINER_RUNTIME exec ceph-test radosgw-admin realm list | grep -q "default"; then
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME radosgw-admin realm list | grep -q "default"; then
         error "RGW realm not configured"
         return 1
     fi
 
     # Create test user
-    if ! $CONTAINER_RUNTIME exec ceph-test radosgw-admin user create \
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME radosgw-admin user create \
         --uid=testuser \
         --display-name="Test User" \
         --access-key=test \
@@ -275,7 +279,7 @@ test_rgw() {
 # Test 6: RBD pool functionality
 test_rbd_pool() {
     log "Starting container for RBD test"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
         $IMAGE_TAG || return 1
@@ -283,19 +287,19 @@ test_rbd_pool() {
     wait_for_cluster 120 1 || return 1
 
     # Check RBD pool exists
-    if ! $CONTAINER_RUNTIME exec ceph-test ceph osd pool ls | grep -q "^rbd$"; then
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool ls | grep -q "^rbd$"; then
         error "RBD pool not found"
         return 1
     fi
 
     # Create test image
-    if ! $CONTAINER_RUNTIME exec ceph-test rbd create testimage --size 100M --pool rbd &>/dev/null; then
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME rbd create testimage --size 100M --pool rbd &>/dev/null; then
         error "Failed to create RBD image"
         return 1
     fi
 
     # Verify image exists
-    if ! $CONTAINER_RUNTIME exec ceph-test rbd ls rbd | grep -q "testimage"; then
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME rbd ls rbd | grep -q "testimage"; then
         error "RBD image not listed"
         return 1
     fi
@@ -309,7 +313,7 @@ test_rbd_pool() {
 # Test 7: Custom dashboard credentials
 test_custom_credentials() {
     log "Starting container with custom credentials"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
         -e DASHBOARD_USER=testadmin \
@@ -319,7 +323,7 @@ test_custom_credentials() {
     wait_for_cluster 120 1 || return 1
 
     # Verify custom user exists (indirect check via dashboard services)
-    if ! $CONTAINER_RUNTIME exec ceph-test ceph mgr services | grep -q "dashboard"; then
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services | grep -q "dashboard"; then
         error "Dashboard not configured with custom credentials"
         return 1
     fi
@@ -333,7 +337,7 @@ test_custom_credentials() {
 # Test 8: Replication with object writes
 test_replication() {
     log "Starting container with 3 OSDs for replication test"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=3 \
         -e OSD_SIZE=1G \
         $IMAGE_TAG || return 1
@@ -341,23 +345,23 @@ test_replication() {
     wait_for_cluster 180 3 || return 1
 
     # Write test object
-    if ! echo "test data" | $CONTAINER_RUNTIME exec -i ceph-test rados put testobj - -p rbd; then
+    if ! echo "test data" | $CONTAINER_RUNTIME exec -i $CONTAINER_NAME rados put testobj - -p rbd; then
         error "Failed to write test object"
         return 1
     fi
 
     # Verify object exists
-    if ! $CONTAINER_RUNTIME exec ceph-test rados -p rbd ls | grep -q "testobj"; then
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME rados -p rbd ls | grep -q "testobj"; then
         error "Test object not found"
         return 1
     fi
 
     # Check object mapping (shows which OSDs have the object)
-    local osd_map=$($CONTAINER_RUNTIME exec ceph-test ceph osd map rbd testobj)
+    local osd_map=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd map rbd testobj)
     log "Object mapping: $osd_map"
 
     # Read back the object
-    local data=$($CONTAINER_RUNTIME exec ceph-test rados get testobj - -p rbd)
+    local data=$($CONTAINER_RUNTIME exec $CONTAINER_NAME rados get testobj - -p rbd)
     if [ "$data" != "test data" ]; then
         error "Object data mismatch"
         return 1
@@ -372,7 +376,7 @@ test_replication() {
 # Test 9: Security configuration
 test_security() {
     log "Starting container for security test"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
         $IMAGE_TAG || return 1
@@ -380,7 +384,7 @@ test_security() {
     wait_for_cluster 120 1 || return 1
 
     # Verify insecure global_id reclaim is disabled
-    local auth_setting=$($CONTAINER_RUNTIME exec ceph-test ceph config get mon auth_allow_insecure_global_id_reclaim)
+    local auth_setting=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph config get mon auth_allow_insecure_global_id_reclaim)
     if [ "$auth_setting" != "false" ]; then
         error "Insecure global_id reclaim should be disabled, got: $auth_setting"
         return 1
@@ -395,7 +399,7 @@ test_security() {
 # Test 10: Idempotency (restart container)
 test_idempotency() {
     log "Starting container for idempotency test"
-    $CONTAINER_RUNTIME run -d --name ceph-test \
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
         -e OSD_COUNT=1 \
         -e OSD_SIZE=1G \
         $IMAGE_TAG || return 1
@@ -403,17 +407,17 @@ test_idempotency() {
     wait_for_cluster 120 1 || return 1
 
     # Get initial FSID
-    local fsid1=$($CONTAINER_RUNTIME exec ceph-test ceph fsid)
+    local fsid1=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph fsid)
 
     # Restart container
     log "Restarting container..."
-    $CONTAINER_RUNTIME restart ceph-test
+    $CONTAINER_RUNTIME restart $CONTAINER_NAME
 
     sleep 10
     wait_for_cluster 120 1 || return 1
 
     # Get FSID after restart
-    local fsid2=$($CONTAINER_RUNTIME exec ceph-test ceph fsid)
+    local fsid2=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph fsid)
 
     if [ "$fsid1" != "$fsid2" ]; then
         error "FSID changed after restart: $fsid1 -> $fsid2"
@@ -489,7 +493,7 @@ main() {
         for test in "${FAILED_TESTS[@]}"; do
             error "  - $test"
         done
-        warn "Container 'ceph-test' left running for debugging"
+        warn "Container '$CONTAINER_NAME' left running for debugging"
         return 1
     fi
 }

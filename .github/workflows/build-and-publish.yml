@@ -148,35 +148,40 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
+          # Container name matches the version being tested
+          CONTAINER_NAME="ceph-test-$(echo "${{ matrix.ceph_version }}" | sed 's/[^a-zA-Z0-9_-]/_/g')"
+
           echo "::group::Disk usage inside container"
-          docker exec ceph-test df -h 2>&1 || echo "Cannot check disk usage"
+          docker exec $CONTAINER_NAME df -h 2>&1 || echo "Cannot check disk usage"
           echo "::endgroup::"
 
           echo "::group::Container logs"
-          docker logs ceph-test 2>&1 || echo "No container logs available"
+          docker logs $CONTAINER_NAME 2>&1 || echo "No container logs available"
           echo "::endgroup::"
 
           echo "::group::Supervisor logs"
-          docker exec ceph-test cat /var/log/supervisor/supervisord.log 2>&1 || echo "No supervisor logs available"
+          docker exec $CONTAINER_NAME cat /var/log/supervisor/supervisord.log 2>&1 || echo "No supervisor logs available"
           echo "::endgroup::"
 
           echo "::group::OSD-0 stdout log"
-          docker exec ceph-test cat /var/log/supervisor/ceph-osd-0-stdout.log 2>&1 || echo "No OSD-0 stdout log"
+          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-osd-0-stdout.log 2>&1 || echo "No OSD-0 stdout log"
           echo "::endgroup::"
 
           echo "::group::OSD-0 stderr log"
-          docker exec ceph-test cat /var/log/supervisor/ceph-osd-0-stderr.log 2>&1 || echo "No OSD-0 stderr log"
+          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-osd-0-stderr.log 2>&1 || echo "No OSD-0 stderr log"
           echo "::endgroup::"
 
           echo "::group::Ceph status"
-          docker exec ceph-test ceph -s 2>&1 || echo "Ceph not accessible"
+          docker exec $CONTAINER_NAME ceph -s 2>&1 || echo "Ceph not accessible"
           echo "::endgroup::"
 
       - name: Cleanup test container
         if: always()
         run: |
-          docker stop ceph-test 2>/dev/null || true
-          docker rm ceph-test 2>/dev/null || true
+          # Container name matches the version being tested
+          CONTAINER_NAME="ceph-test-$(echo "${{ matrix.ceph_version }}" | sed 's/[^a-zA-Z0-9_-]/_/g')"
+          docker stop $CONTAINER_NAME 2>/dev/null || true
+          docker rm $CONTAINER_NAME 2>/dev/null || true
 
   # Job 3: Publish images to Quay.io
   publish:
