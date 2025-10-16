@@ -79,7 +79,7 @@ mon_max_pg_per_osd = 500
 
 [mon.$MON_NAME]
 host = $MON_NAME
-mon addr = $ACTUAL_MON_IP:3300
+mon addr = [v2:$ACTUAL_MON_IP:3300,v1:$ACTUAL_MON_IP:6789]
 public addr = $ACTUAL_MON_IP
 
 [osd]
@@ -109,7 +109,7 @@ ceph-authtool /var/lib/ceph/tmp/ceph.mon.keyring \
 
 # Create monitor map
 echo "Creating monitor map..."
-monmaptool --create --add $MON_NAME $ACTUAL_MON_IP:3300 --fsid $FSID \
+monmaptool --create --addv $MON_NAME [v2:$ACTUAL_MON_IP:3300,v1:$ACTUAL_MON_IP:6789] --fsid $FSID \
     /var/lib/ceph/tmp/monmap
 
 # Bootstrap monitor daemon
