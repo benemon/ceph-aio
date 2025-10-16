@@ -405,6 +405,32 @@ test_security() {
 
     wait_for_cluster 120 1 || return 1
 
+    # Wait for auth-setup to complete
+    sleep 10
+
+    # Verify cephx authentication is configured
+    log "Verifying cephx authentication settings..."
+
+    local auth_client=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph config get mon auth_client_required 2>/dev/null)
+    if [ "$auth_client" != "cephx" ]; then
+        error "auth_client_required should be cephx, got: $auth_client"
+        return 1
+    fi
+
+    local auth_cluster=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph config get mon auth_cluster_required 2>/dev/null)
+    if [ "$auth_cluster" != "cephx" ]; then
+        error "auth_cluster_required should be cephx, got: $auth_cluster"
+        return 1
+    fi
+
+    local auth_service=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph config get mon auth_service_required 2>/dev/null)
+    if [ "$auth_service" != "cephx" ]; then
+        error "auth_service_required should be cephx, got: $auth_service"
+        return 1
+    fi
+
+    log "Cephx authentication properly configured"
+
     # Verify insecure global_id reclaim is disabled
     local auth_setting=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph config get mon auth_allow_insecure_global_id_reclaim)
     if [ "$auth_setting" != "false" ]; then
