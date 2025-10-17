@@ -8,12 +8,12 @@ This is designed to supercede the functionality previously found in the `ceph/da
 
 ## Images 
 
-Container images for this repository support `linux/amd64` and `linux/arm64`, inline with the Ceph projects own build guidelines. Accordingly, `linux/arm64` support is provided on the same basis as Ceph. 
-
-These images are built weekly and can be pulled from `quay.io/benjamin_holmes/ceph-aio`. The images are tagged in line with the currently supported Ceph stable releases e.g:
+Container images for `ceph-aio` are built weekly and can be pulled from `quay.io/benjamin_holmes/ceph-aio`. The images are tagged in line with the currently supported [Ceph stable releases](https://docs.ceph.com/en/latest/releases/#active-releases) e.g:
 
 * `quay.io/benjamin_holmes/ceph-aio:v18`
 * `quay.io/benjamin_holmes/ceph-aio:v19`
+
+Container images for this repository support `linux/amd64` and `linux/arm64`, in accordance with the Ceph projects' own container build process.
 
 In addition, each weekly image build also produces a datestamped tag to allow a more predictable pull target. Be aware that in order to keep housekeeping of these simple, these will expire and be pruned from Quay after 4 weeks.
 
@@ -169,6 +169,7 @@ This container runs the following services via supervisord:
 - **ceph-mgr**: Manager daemon (metrics, orchestration)
 - **ceph-osd-0**: OSD daemon (10GB data storage by default)
 - **ceph-rgw**: RADOS Gateway (S3/Swift API)
+- **auth-setup**: One-shot configuration of cephx authentication (ensures proper client authentication)
 - **dashboard-setup**: One-shot setup for Ceph dashboard
 - **rbd-pool-setup**: One-shot creation of RBD block pool for testing
 - **rgw-setup**: One-shot creation of RGW realm/zonegroup/zone configuration
@@ -417,6 +418,7 @@ supervisord (process manager)
     ├── setup-mgr.sh (priority 15, one-shot) - Configures MGR
     ├── run-mgr.sh (priority 20) - Manager daemon wrapper
     ├── setup-osd.sh (priority 30+N, per-OSD) - Initialises OSDs
+    ├── setup-auth.sh (priority 95, one-shot) - Configures cephx authentication
     ├── setup-dashboard.sh (priority 100, one-shot) - Configures dashboard
     ├── setup-rbd.sh (priority 105, one-shot) - Creates RBD pool
     ├── setup-rgw.sh (priority 110, one-shot) - Configures RGW realm/zone
@@ -431,6 +433,7 @@ All setup logic has been extracted to maintainable scripts in `/scripts/`:
 - **run-mgr.sh**: Waits for keyring, then starts manager daemon
 - **run-rgw.sh**: Waits for keyring, then starts RGW daemon
 - **setup-mgr.sh**: Creates manager keyring, sets PG limits, disables autoscaler, configures security
+- **setup-auth.sh**: Configures cephx authentication for secure client connections
 - **setup-dashboard.sh**: Enables dashboard, creates user, configures SSL
 - **setup-rbd.sh**: Creates and initialises RBD pool for block storage
 - **setup-rgw.sh**: Creates RGW realm/zonegroup/zone, restarts daemon
