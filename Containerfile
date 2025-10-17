@@ -1,5 +1,5 @@
 # Use a specific Ceph version
-ARG CEPH_VERSION=v19.2.3
+ARG CEPH_VERSION=v19
 FROM quay.io/ceph/ceph:${CEPH_VERSION}
 
 # Install minimal dependencies

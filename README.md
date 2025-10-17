@@ -608,6 +608,10 @@ For testing replication, recovery, or failure scenarios:
 
 3. **Test with replicated data** and observe behaviour with multiple copies
 
+## Nomad Deployment
+
+For production-like deployments using HashiCorp Nomad, see the [nomad/README.md](nomad/README.md) for detailed deployment instructions and Ceph-CSI integration.
+
 ## Extending the Setup
 
 ### Adding MDS (CephFS)

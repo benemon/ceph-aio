@@ -87,8 +87,8 @@ jobs:
 
           echo "Final matrix: $JSON_ARRAY"
 
-  # Job 2: Build and test images for each version (amd64 only)
-  build-test:
+  # Job 2: Build, test, and publish each version independently
+  build-test-publish:
     needs: discover-versions
     if: ${{ inputs.skip_tests != true }}
     runs-on: ubuntu-latest
@@ -178,6 +178,53 @@ jobs:
           docker stop $CONTAINER_NAME 2>/dev/null || true
           docker rm $CONTAINER_NAME 2>/dev/null || true
 
+      # Publish steps - only run if tests passed and on main branch
+      - name: Set up QEMU for multi-platform builds
+        if: |
+          success() &&
+          github.event_name != 'pull_request' &&
+          (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: docker/setup-qemu-action@v3
+
+      - name: Log in to Quay.io
+        if: |
+          success() &&
+          github.event_name != 'pull_request' &&
+          (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Build and push multi-platform images
+        if: |
+          success() &&
+          github.event_name != 'pull_request' &&
+          (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          echo "Building and pushing Ceph AIO for version ${{ matrix.ceph_version }}"
+
+          # Generate build date in YYYYMMDD format (matching Ceph's format)
+          BUILD_DATE=$(date +%Y%m%d)
+
+          # Build and push for both amd64 and arm64
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
+            --file Containerfile \
+            --provenance=false \
+            --sbom=false \
+            --push \
+            .
+
+          echo "Successfully pushed multi-platform images:"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling)"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable)"
+          echo "  - Platforms: linux/amd64, linux/arm64"
+
   # Job 2b: Build and publish (skip tests) for manual workflow
   build-and-publish:
     needs: discover-versions
@@ -222,6 +269,8 @@ jobs:
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
             --file Containerfile \
+            --provenance=false \
+            --sbom=false \
             --push \
             .
 
@@ -230,79 +279,9 @@ jobs:
           echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable)"
           echo "  - Platforms: linux/amd64, linux/arm64"
 
-  # Job 3: Publish images to Quay.io (after successful tests)
-  publish:
-    needs: [discover-versions, build-test]
-    if: |
-      github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        ceph_version: ${{ fromJson(needs.discover-versions.outputs.matrix) }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Set up QEMU for multi-platform builds
-        uses: docker/setup-qemu-action@v3
-
-      - name: Log in to Quay.io
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-
-      - name: Build and push multi-platform images
-        run: |
-          # Generate build date in YYYYMMDD format (matching Ceph's format)
-          BUILD_DATE=$(date +%Y%m%d)
-
-          # Build and push for both amd64 and arm64
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
-            --file Containerfile \
-            --push \
-            .
-
-          echo "Successfully pushed multi-platform images:"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling)"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable)"
-          echo "  - Platforms: linux/amd64, linux/arm64"
-
-      - name: Generate image summary
-        run: |
-          BUILD_DATE=$(date +%Y%m%d)
-
-          echo "## Published Image" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Ceph Version:** \`${{ matrix.ceph_version }}\` (tracks latest patch)" >> $GITHUB_STEP_SUMMARY
-          echo "**Build Date:** \`${BUILD_DATE}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Pull Commands:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# Rolling tag (always latest build for this major version)" >> $GITHUB_STEP_SUMMARY
-          echo "podman pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# Immutable dated tag (specific build)" >> $GITHUB_STEP_SUMMARY
-          echo "podman pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Available Tags:**" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ matrix.ceph_version }}\` (rolling - always latest build)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ matrix.ceph_version }}-${BUILD_DATE}\` (immutable - this specific build)" >> $GITHUB_STEP_SUMMARY
-
-  # Job 4: Create summary report
+  # Job 3: Create summary report
   summary:
-    needs: [discover-versions, build-test, publish]
+    needs: [discover-versions, build-test-publish]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -315,16 +294,12 @@ jobs:
           echo "**Versions Built:** ${{ needs.discover-versions.outputs.versions }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ needs.build-test.result }}" == "success" ]; then
-            echo "✅ **All tests passed**" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Some tests failed**" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "${{ needs.publish.result }}" == "success" ]; then
-            echo "✅ **Images published to Quay.io**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.build-test-publish.result }}" == "success" ]; then
+            echo "✅ **All versions tested and published successfully**" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "ℹ️ **Images not published (PR build)**" >> $GITHUB_STEP_SUMMARY
+            echo "ℹ️ **Tests passed, images not published (PR build)**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Image publishing failed**" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Some versions may have failed (check individual jobs)**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "With independent publishing, successful versions are published even if others fail." >> $GITHUB_STEP_SUMMARY
           fi
