@@ -223,19 +223,24 @@ jobs:
             .
           echo "Successfully pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling, no expiration)"
 
-      - name: Create dated tag with expiration annotation
+      - name: Build and push dated tag with expiration label
         if: |
           success() &&
           github.event_name != 'pull_request' &&
           (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         run: |
-          echo "Creating dated tag with expiration annotation for Ceph AIO ${{ matrix.ceph_version }}"
-          # Use imagetools to create a new tag from the rolling tag with manifest annotation
-          docker buildx imagetools create \
-            --annotation "manifest:quay.expires-after=4w" \
+          echo "Building and pushing dated tag with expiration label for Ceph AIO ${{ matrix.ceph_version }}"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
-          echo "Successfully created: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} (immutable, expires in 8 weeks)"
+            --label "quay.expires-after=4w" \
+            --file Containerfile \
+            --provenance=false \
+            --sbom=false \
+            --push \
+            .
+          echo "Successfully pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} (immutable, expires in 4 weeks)"
 
   # Job 2b: Build and publish (skip tests) for manual workflow
   build-and-publish:
