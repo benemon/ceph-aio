@@ -1,8 +1,21 @@
+[![Build and Publish Ceph AIO](https://github.com/benemon/ceph-aio/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/benemon/ceph-aio/actions/workflows/build-and-publish.yml)
+
 # Ceph All-in-One Development Container
 
 A single-container Ceph cluster for development and testing purposes, built using `quay.io/ceph/ceph` with supervisord managing all daemons.
 
-This is designed to supercede the functionality previous found in the `ceph/daemon` container running in `demo` mode.
+This is designed to supercede the functionality previously found in the `ceph/daemon` container running in `demo` mode.
+
+## Images 
+
+Container images for this repository support `linux/amd64` and `linux/arm64`, inline with the Ceph projects own build guidelines. Accordingly, `linux/arm64` support is provided on the same basis as Ceph. 
+
+These images are built weekly and can be pulled from `quay.io/benjamin_holmes/ceph-aio`. The images are tagged in line with the currently supported Ceph stable releases e.g:
+
+* `quay.io/benjamin_holmes/ceph-aio:v18`
+* `quay.io/benjamin_holmes/ceph-aio:v19`
+
+In addition, each weekly image build also produces a datestamped tag to allow a more predictable pull target. Be aware that in order to keep housekeeping of these simple, these will expire and be pruned from Quay after 4 weeks.
 
 ## Features
 
