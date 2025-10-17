@@ -208,11 +208,10 @@ jobs:
           # Generate build date in YYYYMMDD format (matching Ceph's format)
           BUILD_DATE=$(date +%Y%m%d)
 
-          # Build and push for both amd64 and arm64
+          # Build and push multi-platform image with dated tag
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
             --file Containerfile \
             --provenance=false \
@@ -220,9 +219,20 @@ jobs:
             --push \
             .
 
+          # Push rolling tag (no expiration) - references same manifest
+          docker buildx imagetools create \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
+
+          # Add expiration annotation to dated tag
+          docker buildx imagetools create \
+            --annotation "index:quay.expires-after=8w" \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
+
           echo "Successfully pushed multi-platform images:"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling)"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable)"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling, no expiration)"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable, expires in 8 weeks)"
           echo "  - Platforms: linux/amd64, linux/arm64"
 
   # Job 2b: Build and publish (skip tests) for manual workflow
@@ -262,11 +272,10 @@ jobs:
           # Generate build date in YYYYMMDD format (matching Ceph's format)
           BUILD_DATE=$(date +%Y%m%d)
 
-          # Build and push for both amd64 and arm64
+          # Build and push multi-platform image with dated tag
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
             --file Containerfile \
             --provenance=false \
@@ -274,9 +283,20 @@ jobs:
             --push \
             .
 
+          # Push rolling tag (no expiration) - references same manifest
+          docker buildx imagetools create \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
+
+          # Add expiration annotation to dated tag
+          docker buildx imagetools create \
+            --annotation "index:quay.expires-after=8w" \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE}
+
           echo "Successfully pushed multi-platform images:"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling)"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable)"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling, no expiration)"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${BUILD_DATE} (immutable, expires in 8 weeks)"
           echo "  - Platforms: linux/amd64, linux/arm64"
 
   # Job 3: Create summary report
