@@ -20,13 +20,12 @@ In addition, each weekly image build also produces a datestamped tag to allow a 
 ## Features
 
 - **Single Container**: Entire Ceph cluster runs in one container
-- **Supervisor Managed**: Robust process supervision with automatic restarts
+- **Supervisor Managed**: Process supervision with automatic restarts
 - **Full Stack**: MON, MGR, OSD, Dashboard, and RGW (S3/Swift)
 - **Development-Ready**: Fast startup with pre-installed Ceph binaries, optimised for dev work
 - **Flexible OSDs**: Configurable OSD count with intelligent replication scaling (defaults to 1)
 - **Production-like**: Uses real Ceph daemons and standard configuration
 - **Modular Scripts**: All setup logic extracted to maintainable, debuggable scripts
-- **Clean Health Status**: No spurious warnings - only real issues are reported
 
 ## Quick Start
 
