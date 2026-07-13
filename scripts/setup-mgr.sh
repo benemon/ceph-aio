@@ -35,6 +35,16 @@ ceph config set global osd_pool_default_pg_autoscale_mode off || {
     exit 1
 }
 
+# RGW creates pools on demand, some after setup-rgw's tagging pass, and on
+# v18/v19 daemon-created pools are not always tagged with an application.
+# That leaves a permanent POOL_APP_NOT_ENABLED warning, which is noise for
+# a dev/test container, so silence the warning class entirely.
+log "Disabling pool application warnings (RGW pools are created on demand)"
+ceph config set global mon_warn_on_pool_no_app false || {
+    error "Failed to disable pool application warnings"
+    exit 1
+}
+
 # Disable insecure global_id reclaim (security best practice)
 log "Disabling insecure global_id reclaim (CVE-2021-20288)"
 ceph config set mon auth_allow_insecure_global_id_reclaim false || {
