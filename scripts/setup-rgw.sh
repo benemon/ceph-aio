@@ -76,8 +76,9 @@ fi
 
 # Check if zonegroup already exists
 if radosgw-admin zonegroup list 2>/dev/null | grep -q "\"$ZONEGROUP\""; then
-    log "RGW zonegroup '$ZONEGROUP' already exists, ensuring it's configured as master"
+    log "RGW zonegroup '$ZONEGROUP' already exists, ensuring it's attached to the realm and master"
     radosgw-admin zonegroup modify \
+        --rgw-realm="$REALM" \
         --rgw-zonegroup="$ZONEGROUP" \
         --endpoints="$ENDPOINT" \
         --master \
@@ -100,8 +101,9 @@ fi
 
 # Check if zone already exists
 if radosgw-admin zone list 2>/dev/null | grep -q "\"$ZONE\""; then
-    log "RGW zone '$ZONE' already exists, ensuring it's configured as master"
+    log "RGW zone '$ZONE' already exists, ensuring it's attached to the realm and master"
     radosgw-admin zone modify \
+        --rgw-realm="$REALM" \
         --rgw-zonegroup="$ZONEGROUP" \
         --rgw-zone="$ZONE" \
         --endpoints="$ENDPOINT" \
@@ -139,21 +141,8 @@ for pool in $(ceph osd pool ls | grep -E '^(\.rgw\.|default\.rgw\.)'); do
         log "Could not enable rgw application on pool '$pool' (may already be set)"
 done
 
-# Mark as configured
+# Mark as configured. run-rgw.sh waits for this marker, so the daemon
+# only ever starts against the committed realm/zone configuration.
 mark_done "$MARKER_FILE" "RGW"
 
-success "RGW realm/zonegroup/zone configured"
-
-# Restart RGW daemon to pick up new configuration
-# This ensures RGW connects with the proper realm/zone settings
-log "Restarting RGW daemon to apply configuration"
-
-if command -v supervisorctl &>/dev/null; then
-    supervisorctl restart ceph-rgw || {
-        error "Failed to restart RGW daemon"
-        exit 1
-    }
-    success "RGW daemon restarted - S3/Swift endpoint ready at $ENDPOINT"
-else
-    log "supervisorctl not available, RGW will need manual restart"
-fi
+success "RGW realm/zonegroup/zone configured - S3/Swift endpoint will serve at $ENDPOINT"

@@ -307,8 +307,8 @@ test_rgw() {
     fi
     log "RGW setup complete"
 
-    # Check RGW daemon is running (setup-rgw.sh restarts it after
-    # configuring the realm/zone, so allow time for the restart to settle)
+    # Check RGW daemon is running (run-rgw.sh starts it only after the
+    # configuration marker appears, so allow time for it to come up)
     wait_for_supervisor_program ceph-rgw 90 || {
         error "RGW daemon not running"
         return 1
