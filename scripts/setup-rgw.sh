@@ -26,9 +26,26 @@ wait_for_cluster || {
     exit 1
 }
 
-# Additional wait for OSDs to stabilize (they have 35s startsecs)
-# This is more reliable than checking osd stat which may not reflect actual readiness
-sleep 10
+# Wait for OSDs to be up before creating the realm. radosgw-admin writes
+# to the .rgw.root pool, and those operations race OSD startup (the OSD
+# program has startsecs=35) if gated on the monitor alone.
+OSD_COUNT=${OSD_COUNT:-1}
+log "Waiting for $OSD_COUNT OSD(s) to be up (max 180s)"
+elapsed=0
+osds_up=0
+while [ $elapsed -lt 180 ]; do
+    osds_up=$(ceph osd stat -f json 2>/dev/null | grep -o '"num_up_osds":[0-9]*' | cut -d: -f2 || echo 0)
+    if [ "${osds_up:-0}" -ge "$OSD_COUNT" ]; then
+        break
+    fi
+    sleep 5
+    elapsed=$((elapsed + 5))
+done
+if [ "${osds_up:-0}" -lt "$OSD_COUNT" ]; then
+    error "Only ${osds_up:-0} of $OSD_COUNT OSD(s) up after 180s"
+    exit 1
+fi
+success "$osds_up OSD(s) up, proceeding with RGW configuration"
 
 # Create RGW keyring
 log "Creating RGW keyring"

@@ -294,6 +294,19 @@ test_rgw() {
 
     wait_for_cluster 120 1 || return 1
 
+    # Wait for RGW configuration to complete. setup-rgw.sh writes this
+    # marker after the realm/zone/period are committed; realm queries and
+    # user creation race the setup job if gated on cluster health alone.
+    log "Waiting for RGW setup to complete (max 180s)..."
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME \
+        timeout 180 bash -c 'while [ ! -f /var/run/ceph/rgw-configured ]; do sleep 2; done'; then
+        error "RGW setup did not complete within 180s"
+        $CONTAINER_RUNTIME exec $CONTAINER_NAME cat /var/log/supervisor/rgw-setup.log 2>&1 || true
+        $CONTAINER_RUNTIME exec $CONTAINER_NAME cat /var/log/supervisor/rgw-setup-error.log 2>&1 || true
+        return 1
+    fi
+    log "RGW setup complete"
+
     # Check RGW daemon is running (setup-rgw.sh restarts it after
     # configuring the realm/zone, so allow time for the restart to settle)
     wait_for_supervisor_program ceph-rgw 90 || {

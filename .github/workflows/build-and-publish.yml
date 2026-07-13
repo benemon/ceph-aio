@@ -157,12 +157,22 @@ jobs:
           docker exec $CONTAINER_NAME cat /var/log/supervisor/supervisord.log 2>&1 || echo "No supervisor logs available"
           echo "::endgroup::"
 
-          echo "::group::OSD-0 stdout log"
-          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-osd-0-stdout.log 2>&1 || echo "No OSD-0 stdout log"
+          echo "::group::OSD-0 log"
+          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-osd-0.log 2>&1 || echo "No OSD-0 log"
           echo "::endgroup::"
 
-          echo "::group::OSD-0 stderr log"
-          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-osd-0-stderr.log 2>&1 || echo "No OSD-0 stderr log"
+          echo "::group::OSD-0 error log"
+          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-osd-0-error.log 2>&1 || echo "No OSD-0 error log"
+          echo "::endgroup::"
+
+          echo "::group::RGW setup logs"
+          docker exec $CONTAINER_NAME cat /var/log/supervisor/rgw-setup.log 2>&1 || echo "No rgw-setup log"
+          docker exec $CONTAINER_NAME cat /var/log/supervisor/rgw-setup-error.log 2>&1 || echo "No rgw-setup error log"
+          echo "::endgroup::"
+
+          echo "::group::RGW daemon logs"
+          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-rgw.log 2>&1 || echo "No ceph-rgw log"
+          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-rgw-error.log 2>&1 || echo "No ceph-rgw error log"
           echo "::endgroup::"
 
           echo "::group::Ceph status"
