@@ -35,6 +35,19 @@ env:
   IMAGE_NAME: benjamin_holmes/ceph-aio
 
 jobs:
+  # Job 0: Fast unit tests for the pure shell logic (no containers)
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install BATS
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bats
+
+      - name: Run unit tests
+        run: bats tests/unit
+
   # Job 1: Discover latest stable Ceph versions
   discover-versions:
     runs-on: ubuntu-latest
@@ -48,6 +61,9 @@ jobs:
       - name: Discover Ceph versions
         id: get-versions
         run: |
+          # Tag filtering and matrix conversion are unit-tested in tests/unit/
+          source scripts/lib/config.sh
+
           # If manual workflow with specific versions
           if [ -n "${{ inputs.ceph_versions }}" ]; then
             echo "Using manually specified versions: ${{ inputs.ceph_versions }}"
@@ -60,13 +76,9 @@ jobs:
             echo "Fetching tags via skopeo..."
             ALL_TAGS=$(skopeo list-tags docker://quay.io/ceph/ceph | jq -r '.Tags[]')
 
-            # Get shorthand major version tags (v19, v18, v17, etc.)
-            # These always point to the latest patch release for that major version
-            MAJOR_TAGS=$(echo "$ALL_TAGS" | grep -E '^v[0-9]+$' | sort -V)
-
-            # Get the 3 most recent major versions
-            # This ensures we cover current and previous stable releases
-            RECENT_MAJORS=$(echo "$MAJOR_TAGS" | tail -3)
+            # Shorthand major version tags (v19, v18, ...) always point to
+            # the latest patch release; take the 3 most recent majors
+            RECENT_MAJORS=$(filter_recent_major_tags "$ALL_TAGS" 3)
 
             if [ -z "$RECENT_MAJORS" ]; then
               echo "Error: No major version tags found"
@@ -80,7 +92,7 @@ jobs:
           fi
 
           # Convert to JSON array for matrix (trim whitespace from each version)
-          JSON_ARRAY=$(echo "$VERSIONS" | jq -R -s -c 'split(",") | map(select(length > 0) | gsub("^\\s+|\\s+$"; ""))')
+          JSON_ARRAY=$(versions_to_json_matrix "$VERSIONS")
 
           echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
           echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT

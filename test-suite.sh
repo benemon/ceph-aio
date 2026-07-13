@@ -22,13 +22,20 @@ else
     exit 1
 fi
 
+if ! command -v jq &> /dev/null; then
+    echo "ERROR: jq is required to parse cluster state"
+    exit 1
+fi
+
+# Shared pure helpers (container naming, etc.)
+source "$SCRIPT_DIR/scripts/lib/config.sh"
+
 # Image tag to test (can be overridden via IMAGE_TAG env var)
 # Supports both simple tags (ceph-aio:latest) and full paths (quay.io/user/ceph-aio:v19)
 IMAGE_TAG="${IMAGE_TAG:-ceph-aio:latest}"
 
 # Container name (unique per image to avoid conflicts in parallel CI runs)
-# Extract version from image tag (e.g., "v19" from "quay.io/user/ceph-aio:v19")
-CONTAINER_NAME="ceph-test-$(echo "$IMAGE_TAG" | sed 's/.*://;s/[^a-zA-Z0-9_-]/_/g')"
+CONTAINER_NAME="$(test_container_name "$IMAGE_TAG")"
 
 # Colours for output
 RED='\033[0;31m'
@@ -88,7 +95,7 @@ wait_for_cluster() {
     while [ $elapsed -lt $max_wait ]; do
         if $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph -s &>/dev/null; then
             # Check if OSDs are up
-            local osds_up=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph -s -f json 2>/dev/null | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2 || echo 0)
+            local osds_up=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd stat -f json 2>/dev/null | jq -r '.num_up_osds // 0' || echo 0)
             if [ "$osds_up" -eq "$osd_count" ]; then
                 # Check health status
                 local health=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph health 2>/dev/null || echo "")
@@ -153,6 +160,23 @@ wait_for_supervisor_program() {
     return 1
 }
 
+# Wait for a file to exist inside the test container. Setup one-shots
+# write completion markers under /var/run/ceph/; waiting on those is the
+# only reliable way to order test assertions against background setup.
+wait_for_container_file() {
+    local path=$1
+    local max_wait=${2:-120}
+
+    log "Waiting for $path in container (max ${max_wait}s)..."
+
+    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME \
+        timeout "$max_wait" bash -c "while [ ! -f '$path' ]; do sleep 2; done"; then
+        error "File $path did not appear within ${max_wait}s"
+        return 1
+    fi
+    return 0
+}
+
 # Test 1: Single OSD configuration
 test_single_osd() {
     log "Starting container with OSD_COUNT=1"
@@ -165,7 +189,7 @@ test_single_osd() {
     wait_for_cluster 120 1 || return 1
 
     # Verify pool size
-    local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
+    local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | jq -r '.size')
     if [ "$size" != "1" ]; then
         error "Expected pool size 1, got $size"
         return 1
@@ -190,14 +214,14 @@ test_two_osds() {
     wait_for_cluster 150 2 || return 1
 
     # Verify pool size
-    local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
+    local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | jq -r '.size')
     if [ "$size" != "2" ]; then
         error "Expected pool size 2, got $size"
         return 1
     fi
 
     # Verify min_size
-    local min_size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
+    local min_size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd min_size -f json | jq -r '.min_size')
     if [ "$min_size" != "1" ]; then
         error "Expected min_size 1, got $min_size"
         return 1
@@ -205,7 +229,7 @@ test_two_osds() {
 
     # Verify both OSDs are up (already confirmed by wait_for_cluster)
     # Just double-check with osd stat
-    local osds_up=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd stat -f json | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2)
+    local osds_up=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd stat -f json | jq -r '.num_up_osds')
     if [ "$osds_up" != "2" ]; then
         error "Expected 2 OSDs up, got $osds_up"
         $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd tree
@@ -228,21 +252,21 @@ test_three_osds() {
     wait_for_cluster 180 3 || return 1
 
     # Verify pool size
-    local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | grep -o '"size":[0-9]*' | cut -d':' -f2)
+    local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | jq -r '.size')
     if [ "$size" != "3" ]; then
         error "Expected pool size 3, got $size"
         return 1
     fi
 
     # Verify min_size
-    local min_size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd min_size -f json | grep -o '"min_size":[0-9]*' | cut -d':' -f2)
+    local min_size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd min_size -f json | jq -r '.min_size')
     if [ "$min_size" != "2" ]; then
         error "Expected min_size 2, got $min_size"
         return 1
     fi
 
     # Verify all three OSDs are up
-    local osds_up=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd stat -f json | grep -o '"num_up_osds":[0-9]*' | cut -d':' -f2)
+    local osds_up=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd stat -f json | jq -r '.num_up_osds')
     if [ "$osds_up" != "3" ]; then
         error "Expected 3 OSDs up, got $osds_up"
         return 1
@@ -265,11 +289,13 @@ test_dashboard() {
     wait_for_cluster 120 1 || return 1
 
     # Wait for dashboard setup to complete (runs as a separate supervisor job)
-    log "Waiting for dashboard setup to complete..."
-    sleep 30
+    wait_for_container_file /var/run/ceph/dashboard-configured 120 || {
+        error "Dashboard setup did not complete"
+        return 1
+    }
 
     # Check if dashboard is enabled by checking mgr services directly
-    local dashboard_url=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services -f json 2>/dev/null | grep -o '"dashboard":"[^"]*"' | cut -d'"' -f4)
+    local dashboard_url=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services -f json 2>/dev/null | jq -r '.dashboard // empty')
     if [ -z "$dashboard_url" ]; then
         error "Dashboard URL not configured - dashboard may not be enabled"
         $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services
@@ -297,14 +323,12 @@ test_rgw() {
     # Wait for RGW configuration to complete. setup-rgw.sh writes this
     # marker after the realm/zone/period are committed; realm queries and
     # user creation race the setup job if gated on cluster health alone.
-    log "Waiting for RGW setup to complete (max 180s)..."
-    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME \
-        timeout 180 bash -c 'while [ ! -f /var/run/ceph/rgw-configured ]; do sleep 2; done'; then
-        error "RGW setup did not complete within 180s"
+    wait_for_container_file /var/run/ceph/rgw-configured 180 || {
+        error "RGW setup did not complete"
         $CONTAINER_RUNTIME exec $CONTAINER_NAME cat /var/log/supervisor/rgw-setup.log 2>&1 || true
         $CONTAINER_RUNTIME exec $CONTAINER_NAME cat /var/log/supervisor/rgw-setup-error.log 2>&1 || true
         return 1
-    fi
+    }
     log "RGW setup complete"
 
     # Check RGW daemon is running (run-rgw.sh starts it only after the
@@ -385,8 +409,10 @@ test_custom_credentials() {
     wait_for_cluster 120 1 || return 1
 
     # Wait for dashboard setup to complete (runs as a separate supervisor job)
-    log "Waiting for dashboard setup to complete..."
-    sleep 30
+    wait_for_container_file /var/run/ceph/dashboard-configured 120 || {
+        error "Dashboard setup did not complete"
+        return 1
+    }
 
     # Verify dashboard is running
     if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services | grep -q "dashboard"; then
@@ -460,7 +486,10 @@ test_security() {
     wait_for_cluster 120 1 || return 1
 
     # Wait for auth-setup to complete
-    sleep 10
+    wait_for_container_file /var/run/ceph/auth-configured 60 || {
+        error "Auth setup did not complete"
+        return 1
+    }
 
     # Verify cephx authentication is configured
     log "Verifying cephx authentication settings..."
@@ -533,6 +562,35 @@ test_idempotency() {
     return 0
 }
 
+# Test 11: Container HEALTHCHECK reaches healthy
+test_healthcheck() {
+    log "Starting container for healthcheck test"
+    $CONTAINER_RUNTIME run -d --name $CONTAINER_NAME \
+        -e OSD_COUNT=1 \
+        -e OSD_SIZE=1G \
+        -e DISABLE_MON_DISK_WARNINGS=true \
+        $IMAGE_TAG || return 1
+
+    log "Waiting for container to report healthy (max 300s)..."
+    local elapsed=0
+    local status=""
+
+    while [ $elapsed -lt 300 ]; do
+        status=$($CONTAINER_RUNTIME inspect --format '{{.State.Health.Status}}' $CONTAINER_NAME 2>/dev/null || echo "")
+        if [ "$status" = "healthy" ]; then
+            success "Container reports healthy after ${elapsed}s"
+            cleanup
+            return 0
+        fi
+        sleep 5
+        elapsed=$((elapsed + 5))
+    done
+
+    error "Container did not report healthy within 300s (status: ${status:-unknown})"
+    $CONTAINER_RUNTIME exec $CONTAINER_NAME /scripts/healthcheck.sh 2>&1 || true
+    return 1
+}
+
 # Main test execution
 main() {
     log "=========================================="
@@ -560,6 +618,7 @@ main() {
     run_test "Replication with Object Writes" test_replication
     run_test "Security Configuration" test_security
     run_test "Idempotency" test_idempotency
+    run_test "Container Healthcheck" test_healthcheck
 
     # Print summary
     log ""

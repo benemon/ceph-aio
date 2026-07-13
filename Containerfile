@@ -9,6 +9,7 @@ RUN dnf install -y \
     hostname \
     procps-ng \
     iproute \
+    jq \
     && dnf clean all
 
 # Create directory structure
@@ -48,6 +49,12 @@ ENV MON_IP=0.0.0.0 \
     CEPH_CLUSTER_NETWORK=0.0.0.0/0 \
     DASHBOARD_USER=admin \
     DASHBOARD_PASS=admin@ceph123
+
+# Healthy once all setup one-shots have completed and the mon responds.
+# start-period covers a slow 3-OSD bootstrap; consumers can gate on
+# `docker inspect --format '{{.State.Health.Status}}'` reaching healthy.
+HEALTHCHECK --interval=10s --timeout=15s --start-period=300s --retries=3 \
+    CMD /scripts/healthcheck.sh
 
 WORKDIR /
 

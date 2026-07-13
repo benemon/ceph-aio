@@ -173,6 +173,22 @@ This container runs the following services via supervisord:
 - **rbd-pool-setup**: One-shot creation of RBD block pool for testing
 - **rgw-setup**: One-shot creation of RGW realm/zonegroup/zone configuration
 
+Setup one-shots run with `autorestart=unexpected`, so a transient failure
+retries rather than leaving the container half-configured. Each writes a
+completion marker under `/var/run/ceph/`.
+
+### Readiness
+
+The image defines a Docker `HEALTHCHECK` that reports healthy once every
+setup one-shot has completed and the monitor responds. To wait for a fully
+configured cluster:
+
+```bash
+until [ "$(docker inspect --format '{{.State.Health.Status}}' ceph-aio)" = "healthy" ]; do
+  sleep 5
+done
+```
+
 ## Accessing Services
 
 ### Ceph Dashboard

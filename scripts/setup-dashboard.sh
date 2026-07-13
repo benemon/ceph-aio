@@ -16,8 +16,15 @@ if check_done "$MARKER_FILE" "Dashboard"; then
     exit 0
 fi
 
-# Wait for manager to be available
-sleep 15  # Give MGR time to fully start
+# Wait for an active manager: module and dashboard commands need one
+wait_for_cluster || {
+    error "Cluster not ready, cannot configure dashboard"
+    exit 1
+}
+wait_for_mgr 120 || {
+    error "No active mgr, cannot configure dashboard"
+    exit 1
+}
 
 # Enable dashboard module
 log "Enabling dashboard module"

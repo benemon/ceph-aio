@@ -16,8 +16,16 @@ if check_done "$MARKER_FILE" "RBD pool"; then
     exit 0
 fi
 
-# Wait for cluster to be ready
-sleep 25  # Give OSDs time to come up
+# Wait for cluster and OSDs to be ready: rbd pool init writes objects,
+# which blocks until PGs are servable
+wait_for_cluster || {
+    error "Cluster not ready, cannot create RBD pool"
+    exit 1
+}
+wait_for_osds "${OSD_COUNT:-1}" 180 || {
+    error "OSDs not up, cannot create RBD pool"
+    exit 1
+}
 
 # Check if pool already exists
 if ceph osd pool ls | grep -q "^${POOL_NAME}$"; then

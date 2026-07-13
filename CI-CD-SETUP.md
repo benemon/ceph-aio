@@ -85,6 +85,12 @@ You can manually trigger builds with custom versions:
 
 ## Workflow Jobs
 
+### Job 0: Unit Tests
+Runs the BATS suite in `tests/unit/` against the pure shell helpers in
+`scripts/lib/config.sh` (replication sizing, container naming, version
+matrix construction). No containers involved, so it completes in seconds
+and fails fast on logic regressions.
+
 ### Job 1: Discover Versions
 Automatically discovers the latest stable Ceph releases using `skopeo`:
 
@@ -157,8 +163,9 @@ For each discovered version:
   - Replication testing
   - Security configuration
   - Idempotency
+  - Container healthcheck reaching healthy
 - Saves successful builds as artifacts
-- Collects logs on failure for debugging
+- Collects logs on failure for debugging (container, supervisor, OSD and RGW logs)
 
 ### Job 3: Publish
 Only runs on successful builds from main branch or scheduled runs:
