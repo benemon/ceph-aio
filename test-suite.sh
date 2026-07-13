@@ -137,8 +137,8 @@ verify_health_ok() {
 }
 
 # Wait for a supervisor-managed program to reach RUNNING state.
-# Setup scripts deliberately restart daemons (e.g. setup-rgw.sh restarts
-# ceph-rgw), so a one-shot status check can catch STARTING/BACKOFF.
+# A one-shot status check can catch a program in STARTING/BACKOFF while
+# it waits on its prerequisites.
 wait_for_supervisor_program() {
     local program=$1
     local max_wait=${2:-90}
@@ -188,6 +188,12 @@ test_single_osd() {
 
     wait_for_cluster 120 1 || return 1
 
+    # Pool assertions need rbd-pool-setup to have finished
+    wait_for_container_file /var/run/ceph/rbd-configured 120 || {
+        error "RBD pool setup did not complete"
+        return 1
+    }
+
     # Verify pool size
     local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | jq -r '.size')
     if [ "$size" != "1" ]; then
@@ -212,6 +218,12 @@ test_two_osds() {
         $IMAGE_TAG || return 1
 
     wait_for_cluster 150 2 || return 1
+
+    # Pool assertions need rbd-pool-setup to have finished
+    wait_for_container_file /var/run/ceph/rbd-configured 120 || {
+        error "RBD pool setup did not complete"
+        return 1
+    }
 
     # Verify pool size
     local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | jq -r '.size')
@@ -250,6 +262,12 @@ test_three_osds() {
         $IMAGE_TAG || return 1
 
     wait_for_cluster 180 3 || return 1
+
+    # Pool assertions need rbd-pool-setup to have finished
+    wait_for_container_file /var/run/ceph/rbd-configured 120 || {
+        error "RBD pool setup did not complete"
+        return 1
+    }
 
     # Verify pool size
     local size=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool get rbd size -f json | jq -r '.size')
@@ -371,6 +389,12 @@ test_rbd_pool() {
 
     wait_for_cluster 120 1 || return 1
 
+    # Wait for rbd-pool-setup to finish before asserting on the pool
+    wait_for_container_file /var/run/ceph/rbd-configured 120 || {
+        error "RBD pool setup did not complete"
+        return 1
+    }
+
     # Check RBD pool exists
     if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph osd pool ls | grep -q "^rbd$"; then
         error "RBD pool not found"
@@ -444,6 +468,12 @@ test_replication() {
         $IMAGE_TAG || return 1
 
     wait_for_cluster 180 3 || return 1
+
+    # Object writes go to the rbd pool; wait for its setup to finish
+    wait_for_container_file /var/run/ceph/rbd-configured 120 || {
+        error "RBD pool setup did not complete"
+        return 1
+    }
 
     # Write test object
     if ! echo "test data" | $CONTAINER_RUNTIME exec -i $CONTAINER_NAME rados put testobj - -p rbd; then
