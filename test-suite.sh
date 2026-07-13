@@ -312,10 +312,20 @@ test_dashboard() {
         return 1
     }
 
-    # Check if dashboard is enabled by checking mgr services directly
-    local dashboard_url=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services -f json 2>/dev/null | jq -r '.dashboard // empty')
+    # The mgr publishes the dashboard service URI asynchronously after
+    # setup completes, so poll rather than checking once
+    local dashboard_url=""
+    local elapsed=0
+    while [ $elapsed -lt 60 ]; do
+        dashboard_url=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services -f json 2>/dev/null | jq -r '.dashboard // empty')
+        if [ -n "$dashboard_url" ]; then
+            break
+        fi
+        sleep 3
+        elapsed=$((elapsed + 3))
+    done
     if [ -z "$dashboard_url" ]; then
-        error "Dashboard URL not configured - dashboard may not be enabled"
+        error "Dashboard URL not published within 60s - dashboard may not be enabled"
         $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services
         return 1
     fi
@@ -438,8 +448,19 @@ test_custom_credentials() {
         return 1
     }
 
-    # Verify dashboard is running
-    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services | grep -q "dashboard"; then
+    # Verify dashboard is running (the mgr publishes the service URI
+    # asynchronously after setup completes, so poll rather than check once)
+    local elapsed=0
+    local dashboard_up=""
+    while [ $elapsed -lt 60 ]; do
+        if $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph mgr services 2>/dev/null | grep -q "dashboard"; then
+            dashboard_up=yes
+            break
+        fi
+        sleep 3
+        elapsed=$((elapsed + 3))
+    done
+    if [ -z "$dashboard_up" ]; then
         error "Dashboard not running"
         return 1
     fi
