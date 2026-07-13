@@ -142,9 +142,8 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
-          # Container name matches the version and platform being tested
-          PLATFORM_SLUG="$(echo "${{ matrix.platform }}" | sed 's/[^a-zA-Z0-9_-]/_/g')"
-          CONTAINER_NAME="ceph-test-$(echo "${{ matrix.ceph_version }}" | sed 's/[^a-zA-Z0-9_-]/_/g')-${PLATFORM_SLUG}"
+          # Container name matches the version being tested (must match test-suite.sh)
+          CONTAINER_NAME="ceph-test-$(echo "${{ matrix.ceph_version }}" | sed 's/[^a-zA-Z0-9_-]/_/g')"
 
           echo "::group::Disk usage inside container"
           docker exec $CONTAINER_NAME df -h 2>&1 || echo "Cannot check disk usage"
@@ -212,15 +211,26 @@ jobs:
           (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         run: |
           echo "Building and pushing rolling tag for Ceph AIO ${{ matrix.ceph_version }}"
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
-            --file Containerfile \
-            --provenance=false \
-            --sbom=false \
-            --push \
-            .
+          # Retry to absorb transient registry errors (e.g. truncated layer pulls)
+          for attempt in 1 2 3; do
+            if docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+              --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
+              --file Containerfile \
+              --provenance=false \
+              --sbom=false \
+              --push \
+              .; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Build and push failed after 3 attempts"
+              exit 1
+            fi
+            echo "Build and push failed (attempt $attempt), retrying in $((attempt * 30))s..."
+            sleep $((attempt * 30))
+          done
           echo "Successfully pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling, no expiration)"
 
       - name: Build and push dated tag with expiration label
@@ -230,16 +240,27 @@ jobs:
           (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         run: |
           echo "Building and pushing dated tag with expiration label for Ceph AIO ${{ matrix.ceph_version }}"
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} \
-            --label "quay.expires-after=4w" \
-            --file Containerfile \
-            --provenance=false \
-            --sbom=false \
-            --push \
-            .
+          # Retry to absorb transient registry errors (e.g. truncated layer pulls)
+          for attempt in 1 2 3; do
+            if docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+              --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} \
+              --label "quay.expires-after=4w" \
+              --file Containerfile \
+              --provenance=false \
+              --sbom=false \
+              --push \
+              .; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Build and push failed after 3 attempts"
+              exit 1
+            fi
+            echo "Build and push failed (attempt $attempt), retrying in $((attempt * 30))s..."
+            sleep $((attempt * 30))
+          done
           echo "Successfully pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} (immutable, expires in 4 weeks)"
 
   # Job 2b: Build and publish (skip tests) for manual workflow
@@ -279,30 +300,52 @@ jobs:
       - name: Build and push rolling tag
         run: |
           echo "Building and pushing rolling tag for Ceph AIO ${{ matrix.ceph_version }} (tests skipped)"
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
-            --file Containerfile \
-            --provenance=false \
-            --sbom=false \
-            --push \
-            .
+          # Retry to absorb transient registry errors (e.g. truncated layer pulls)
+          for attempt in 1 2 3; do
+            if docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+              --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} \
+              --file Containerfile \
+              --provenance=false \
+              --sbom=false \
+              --push \
+              .; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Build and push failed after 3 attempts"
+              exit 1
+            fi
+            echo "Build and push failed (attempt $attempt), retrying in $((attempt * 30))s..."
+            sleep $((attempt * 30))
+          done
           echo "Successfully pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} (rolling, no expiration)"
 
       - name: Build and push dated tag with expiration label
         run: |
           echo "Building and pushing dated tag with expiration label for Ceph AIO ${{ matrix.ceph_version }} (tests skipped)"
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} \
-            --label "quay.expires-after=4w" \
-            --file Containerfile \
-            --provenance=false \
-            --sbom=false \
-            --push \
-            .
+          # Retry to absorb transient registry errors (e.g. truncated layer pulls)
+          for attempt in 1 2 3; do
+            if docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+              --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} \
+              --label "quay.expires-after=4w" \
+              --file Containerfile \
+              --provenance=false \
+              --sbom=false \
+              --push \
+              .; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Build and push failed after 3 attempts"
+              exit 1
+            fi
+            echo "Build and push failed (attempt $attempt), retrying in $((attempt * 30))s..."
+            sleep $((attempt * 30))
+          done
           echo "Successfully pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} (immutable, expires in 4 weeks)"
 
   # Job 3: Create summary report

@@ -113,6 +113,15 @@ radosgw-admin period update --commit || {
     exit 1
 }
 
+# Tag RGW pools with the rgw application to avoid POOL_APP_NOT_ENABLED
+# health warnings. Pools created via radosgw-admin (realm/zone setup) are
+# not tagged automatically; non-fatal as the RGW daemon tags its own pools.
+log "Enabling rgw application on RGW pools"
+for pool in $(ceph osd pool ls | grep -E '^(\.rgw\.|default\.rgw\.)'); do
+    ceph osd pool application enable "$pool" rgw 2>/dev/null || \
+        log "Could not enable rgw application on pool '$pool' (may already be set)"
+done
+
 # Mark as configured
 mark_done "$MARKER_FILE" "RGW"
 

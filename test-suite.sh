@@ -107,6 +107,52 @@ wait_for_cluster() {
     return 1
 }
 
+# Verify health is HEALTH_OK, retrying to ride out transient warnings.
+# Background setup jobs (e.g. RGW pool creation) can briefly raise warnings
+# such as POOL_APP_NOT_ENABLED after the cluster first reports healthy.
+verify_health_ok() {
+    local max_wait=${1:-60}
+    local elapsed=0
+    local health=""
+
+    while [ $elapsed -lt $max_wait ]; do
+        health=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph health 2>/dev/null || echo "")
+        if [ "$health" = "HEALTH_OK" ]; then
+            return 0
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    error "Expected HEALTH_OK within ${max_wait}s, got $health"
+    $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph health detail || true
+    return 1
+}
+
+# Wait for a supervisor-managed program to reach RUNNING state.
+# Setup scripts deliberately restart daemons (e.g. setup-rgw.sh restarts
+# ceph-rgw), so a one-shot status check can catch STARTING/BACKOFF.
+wait_for_supervisor_program() {
+    local program=$1
+    local max_wait=${2:-90}
+    local elapsed=0
+
+    log "Waiting for supervisor program '$program' to be RUNNING (max ${max_wait}s)..."
+
+    while [ $elapsed -lt $max_wait ]; do
+        if $CONTAINER_RUNTIME exec $CONTAINER_NAME supervisorctl status "$program" 2>/dev/null | grep -q RUNNING; then
+            success "Program '$program' is RUNNING"
+            return 0
+        fi
+        sleep 3
+        elapsed=$((elapsed + 3))
+    done
+
+    error "Program '$program' not RUNNING within ${max_wait}s"
+    $CONTAINER_RUNTIME exec $CONTAINER_NAME supervisorctl status || true
+    return 1
+}
+
 # Test 1: Single OSD configuration
 test_single_osd() {
     log "Starting container with OSD_COUNT=1"
@@ -126,12 +172,7 @@ test_single_osd() {
     fi
 
     # Verify health is OK (warnings should be silenced)
-    local health=$($CONTAINER_RUNTIME exec $CONTAINER_NAME ceph health)
-    if [ "$health" != "HEALTH_OK" ]; then
-        error "Expected HEALTH_OK, got $health"
-        $CONTAINER_RUNTIME exec $CONTAINER_NAME ceph health detail
-        return 1
-    fi
+    verify_health_ok 60 || return 1
 
     cleanup
     return 0
@@ -253,12 +294,12 @@ test_rgw() {
 
     wait_for_cluster 120 1 || return 1
 
-    # Check RGW daemon is running
-    if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME supervisorctl status ceph-rgw | grep -q RUNNING; then
+    # Check RGW daemon is running (setup-rgw.sh restarts it after
+    # configuring the realm/zone, so allow time for the restart to settle)
+    wait_for_supervisor_program ceph-rgw 90 || {
         error "RGW daemon not running"
-        $CONTAINER_RUNTIME exec $CONTAINER_NAME supervisorctl status
         return 1
-    fi
+    }
 
     # Check RGW realm exists
     if ! $CONTAINER_RUNTIME exec $CONTAINER_NAME radosgw-admin realm list | grep -q "default"; then
