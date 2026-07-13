@@ -18,8 +18,11 @@ FSID_FILE="$OSD_DIR/fsid"
 
 log "Setting up OSD.$OSD_ID"
 
-# Wait for cluster to be ready
-sleep 30
+# Wait for the monitor to be responsive before registering the OSD
+wait_for_cluster 60 || {
+    error "Monitor not available, cannot set up OSD.$OSD_ID"
+    exit 1
+}
 
 # Wait for previous OSD to complete initialization (serialization to prevent race conditions)
 if [ "$OSD_ID" -gt 0 ]; then

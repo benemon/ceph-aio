@@ -14,12 +14,9 @@ OSD_COUNT=${OSD_COUNT:-1}
 
 # Determine replication settings based on OSD count
 # Scale intelligently: size = min(OSD_COUNT, 3), min_size = max(1, size - 1)
-if [ "$OSD_COUNT" -le 3 ]; then
-    POOL_SIZE=$OSD_COUNT
-else
-    POOL_SIZE=3  # Cap at 3 replicas (Ceph best practice)
-fi
-POOL_MIN_SIZE=$((POOL_SIZE > 1 ? POOL_SIZE - 1 : 1))
+source /scripts/lib/config.sh
+POOL_SIZE=$(calc_pool_size "$OSD_COUNT")
+POOL_MIN_SIZE=$(calc_pool_min_size "$POOL_SIZE")
 
 # Determine the actual IP to use for monmap
 # If MON_IP is 0.0.0.0, find the container's actual IP
