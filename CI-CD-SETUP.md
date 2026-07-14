@@ -24,7 +24,7 @@ You need a Quay.io account with a repository for the images:
 
 Ensure your repository has:
 - The workflow file at `.github/workflows/build-and-publish.yml`
-- The test suite script at `test-suite.sh`
+- The test suites at `tests/unit/` (BATS) and `tests/e2e/` (pytest + Testcontainers)
 - All Ceph AIO source files (Containerfile, scripts/, etc.)
 
 ## GitHub Secrets Configuration
@@ -153,22 +153,17 @@ This approach is **fully automatic** and **simple**:
 ### Job 2: Build and Test
 For each discovered version:
 - Builds the Ceph AIO container image
-- Runs comprehensive test suite covering:
-  - Single OSD configuration
-  - Multiple OSD configurations (2 and 3 OSDs)
-  - Dashboard accessibility
-  - RGW (S3/Swift) functionality
-  - RBD block storage
-  - Custom credentials
-  - Replication testing
-  - Security configuration
-  - Idempotency
-  - Container healthcheck reaching healthy
-- Runs the Testcontainers e2e suite (`tests/e2e/`, pytest): parametrized
-  cluster sizing plus client-perspective tests — S3 object roundtrip via
-  boto3 against the mapped RGW port, dashboard over HTTPS
-- Saves successful builds as artifacts
-- Collects logs on failure for debugging (container, supervisor, OSD and RGW logs)
+- Runs the Testcontainers e2e suite (`tests/e2e/`, pytest) covering:
+  - Cluster sizing across 1/2/3 OSDs (replication size/min_size, acting sets)
+  - Object replication and data integrity
+  - RGW (S3) functionality via boto3 against the mapped port
+  - Dashboard over HTTPS, default and custom credentials
+  - RBD image lifecycle
+  - Security configuration (cephx, global_id reclaim)
+  - Idempotency across container restart (stable FSID)
+  - Readiness via the image HEALTHCHECK (every test gates on it)
+- Dumps container logs on failure (fixtures collect them before Ryuk
+  reaps the containers)
 
 ### Job 3: Publish
 Only runs on successful builds from main branch or scheduled runs:
@@ -247,7 +242,9 @@ podman run -d --name ceph \
 
 ## Test Suite
 
-The test suite (`test-suite.sh`) validates:
+The e2e suite (`tests/e2e/`, pytest + testcontainers-python) provisions
+throwaway containers, gates on the image's Docker HEALTHCHECK, and
+validates:
 
 1. **Single OSD Configuration**
    - Verifies pool size = 1
@@ -324,8 +321,8 @@ podman build -t ceph-aio:latest -f Containerfile .
 
 ### Run Test Suite
 ```bash
-chmod +x test-suite.sh
-./test-suite.sh
+pip install -r tests/e2e/requirements.txt
+IMAGE_TAG=ceph-aio:latest pytest tests/e2e -v
 ```
 
 ### Test Specific Version
@@ -335,9 +332,10 @@ podman build \
   -t ceph-aio:v19.2.3 \
   -f Containerfile .
 
-# Update test-suite.sh to use v19.2.3 tag
-./test-suite.sh
+IMAGE_TAG=ceph-aio:v19.2.3 pytest tests/e2e -v
 ```
+
+Run a single test with pytest's filter: `pytest tests/e2e -k s3 -v`.
 
 ## Maintenance
 
@@ -368,20 +366,17 @@ The discovery is based entirely on what's available in the container registry:
 
 ### Updating Test Suite
 
-To add new tests:
+To add new tests, write a pytest function in `tests/e2e/`. Use the
+`cluster` fixture for assertions against a shared single-OSD cluster,
+or `make_cluster()` for a dedicated container:
 
-1. Add test function to `test-suite.sh`:
-   ```bash
-   test_my_feature() {
-       # Test implementation
-       return 0  # Success
-   }
-   ```
+```python
+def test_my_feature(cluster):
+    assert cluster.exec("ceph", "health").strip() == "HEALTH_OK"
+```
 
-2. Call test in main():
-   ```bash
-   run_test "My Feature Test" test_my_feature
-   ```
+Pure shell logic belongs in `scripts/lib/config.sh` with a matching
+BATS test in `tests/unit/`.
 
 ## Cost Considerations
 
