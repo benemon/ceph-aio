@@ -109,6 +109,17 @@ wait_for_mgr() {
     return 1
 }
 
+# Stable node identity for mon/mgr naming. Recorded by bootstrap.sh on
+# first bootstrap so a recreated container (fresh random hostname) keeps
+# addressing the same daemon data on persistent volumes.
+ceph_node_name() {
+    if [ -f /etc/ceph/node_name ]; then
+        cat /etc/ceph/node_name
+    else
+        hostname -s
+    fi
+}
+
 # Check if already configured (generic marker file approach)
 # Usage: check_done <marker_file> <description>
 check_done() {

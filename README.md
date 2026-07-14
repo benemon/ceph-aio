@@ -328,7 +328,8 @@ podman logs -f ceph-dev
 
 ## Persistent Data
 
-To persist cluster data between container restarts:
+To persist cluster data beyond the container's lifetime, mount volumes
+for the data and config directories:
 
 ```bash
 podman run -d \
@@ -342,7 +343,15 @@ podman run -d \
   ceph-aio:latest
 ```
 
-The bootstrap script is idempotent - it will skip setup if the cluster is already initialised.
+The bootstrap script is idempotent and recreation-safe: the monitor
+identity is recorded on the config volume at first bootstrap, and on
+every boot the container regenerates its runtime wiring around the
+existing data - OSD supervisor programs, ceph.conf, and the monitor's
+advertised address (the monmap is rewritten if the container IP
+changed). The same volumes can therefore be mounted into a brand-new
+container (after `podman rm`, or a compose recreation) and the cluster
+returns with its data intact. Run the new container with the same
+OSD_COUNT the volumes were created with.
 
 ## Common Operations
 

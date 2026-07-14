@@ -168,8 +168,9 @@ For each discovered version:
 The suite is tiered with pytest markers: PR and push runs execute the
 fast tier only, while the weekly schedule and manual dispatch also run
 the `extended` tier — S3 multipart uploads and presigned URLs, SIGKILL
-crash recovery, and an RBD data-path test driven from a second
-container over a shared Docker network.
+crash recovery, an RBD data-path test driven from a second container
+over a shared Docker network, and data persistence across container
+recreation on named volumes.
 
 ### Job 3: Publish
 Only runs on successful builds from main branch or scheduled runs:
