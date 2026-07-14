@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # Keep workflow action pins current (runtime deprecations, security fixes).
+  # Action bumps are validated by the unit-tests job and the full e2e matrix
+  # on the resulting pull request. The Ceph base image is deliberately NOT
+  # managed here: the weekly discover-versions job tracks upstream releases
+  # via rolling tags.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions:
+        patterns: ["*"]
