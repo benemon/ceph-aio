@@ -76,7 +76,21 @@ class CephCluster:
             if status == "healthy":
                 return
             time.sleep(5)
+        self.dump_logs(f"container not healthy after {timeout}s (status: {status})")
         raise TimeoutError(f"container not healthy after {timeout}s (status: {status})")
+
+    def restart(self, timeout: int = 30) -> None:
+        self._wrapped.restart(timeout=timeout)
+
+    def dump_logs(self, reason: str, tail: int = 100) -> None:
+        """Print container logs for post-mortem; Ryuk removes the container
+        before any workflow-level log collection can reach it."""
+        print(f"\n===== container logs ({reason}, last {tail} lines) =====")
+        try:
+            print(self._wrapped.logs(tail=tail).decode(errors="replace"))
+        except Exception as exc:  # container may already be gone
+            print(f"(could not fetch logs: {exc})")
+        print("===== end container logs =====")
 
     def endpoint(self, container_port: int) -> str:
         host = self._container.get_container_host_ip()
@@ -106,6 +120,20 @@ def make_cluster(osd_count: int = 1) -> DockerContainer:
     )
 
 
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Expose per-phase reports on the item so fixtures can react to failure."""
+    outcome = yield
+    rep = outcome.get_result()
+    setattr(item, "rep_" + rep.when, rep)
+
+
+def _dump_logs_on_failure(request, cluster: CephCluster) -> None:
+    rep = getattr(request.node, "rep_call", None)
+    if rep is not None and rep.failed:
+        cluster.dump_logs(f"test failed: {request.node.name}")
+
+
 @pytest.fixture(params=[1, 2, 3], ids=lambda n: f"{n}osd")
 def sized_cluster(request):
     """A fresh cluster per OSD count; parametrizes the sizing tests."""
@@ -113,6 +141,7 @@ def sized_cluster(request):
         cluster = CephCluster(container)
         cluster.wait_healthy()
         yield cluster, request.param
+        _dump_logs_on_failure(request, cluster)
 
 
 @pytest.fixture(scope="module")

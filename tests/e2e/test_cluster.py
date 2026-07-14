@@ -19,3 +19,9 @@ def test_replication_scales_with_osd_count(sized_cluster):
     assert min_size == expected_min
 
     assert cluster.exec("ceph", "health").strip() == "HEALTH_OK"
+
+    # Objects replicate across the expected number of OSDs
+    cluster.exec("bash", "-c", "echo replicated-payload | rados put repl-obj - -p rbd")
+    assert cluster.exec("rados", "-p", "rbd", "get", "repl-obj", "-").strip() == "replicated-payload"
+    acting = cluster.ceph_json("ceph", "osd", "map", "rbd", "repl-obj")["acting"]
+    assert len(set(acting)) == expected_size

@@ -33,12 +33,6 @@ def _wait_for_http(url: str, timeout: int = SERVICE_WAIT, **kwargs) -> requests.
     raise TimeoutError(f"no HTTP response from {url} within {timeout}s: {last_error}")
 
 
-def test_rados_object_roundtrip(cluster):
-    cluster.exec("bash", "-c", "echo e2e-payload | rados put e2e-obj - -p rbd")
-    assert "e2e-obj" in cluster.exec("rados", "-p", "rbd", "ls")
-    assert cluster.exec("rados", "-p", "rbd", "get", "e2e-obj", "-").strip() == "e2e-payload"
-
-
 def test_rbd_image_lifecycle(cluster):
     cluster.exec("rbd", "create", "e2e-image", "--size", "64M", "--pool", "rbd")
     assert "e2e-image" in cluster.exec("rbd", "ls", "rbd")
@@ -72,6 +66,14 @@ def test_s3_object_roundtrip(cluster):
 
     keys = [o["Key"] for o in s3.list_objects_v2(Bucket="e2e-bucket").get("Contents", [])]
     assert keys == ["hello.txt"]
+
+
+def test_security_configuration(cluster):
+    for setting in ("auth_client_required", "auth_cluster_required", "auth_service_required"):
+        assert cluster.exec("ceph", "config", "get", "mon", setting).strip() == "cephx"
+
+    reclaim = cluster.exec("ceph", "config", "get", "mon", "auth_allow_insecure_global_id_reclaim")
+    assert reclaim.strip() == "false"
 
 
 def test_dashboard_serves_https(cluster):
