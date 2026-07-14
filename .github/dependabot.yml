@@ -13,3 +13,13 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # Python dependencies of the Testcontainers e2e suite
+  - package-ecosystem: "pip"
+    directory: "/tests/e2e"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      e2e-test-deps:
+        patterns: ["*"]

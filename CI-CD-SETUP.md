@@ -164,6 +164,9 @@ For each discovered version:
   - Security configuration
   - Idempotency
   - Container healthcheck reaching healthy
+- Runs the Testcontainers e2e suite (`tests/e2e/`, pytest): parametrized
+  cluster sizing plus client-perspective tests — S3 object roundtrip via
+  boto3 against the mapped RGW port, dashboard over HTTPS
 - Saves successful builds as artifacts
 - Collects logs on failure for debugging (container, supervisor, OSD and RGW logs)
 

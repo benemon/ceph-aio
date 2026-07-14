@@ -151,6 +151,22 @@ jobs:
           IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} ./test-suite.sh
         timeout-minutes: 30
 
+      - name: Set up Python for Testcontainers e2e suite
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tests/e2e/requirements.txt
+
+      - name: Install e2e test dependencies
+        run: pip install -r tests/e2e/requirements.txt
+
+      # Runs alongside test-suite.sh while the suites are brought to
+      # parity; test-suite.sh is retired once this suite covers it
+      - name: Run Testcontainers e2e suite
+        run: IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} pytest tests/e2e -v
+        timeout-minutes: 25
+
       - name: Collect logs on failure
         if: failure()
         run: |
