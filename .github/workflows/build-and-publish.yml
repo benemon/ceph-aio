@@ -141,7 +141,7 @@ jobs:
           docker system df
 
       - name: Set up Python for Testcontainers e2e suite
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
