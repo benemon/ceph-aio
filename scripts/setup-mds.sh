@@ -4,8 +4,11 @@ set -e
 # Source common utilities
 source /scripts/lib/common.sh
 
-# Configuration
-MDS_NAME=$(ceph_node_name)
+# Configuration. The MDS id is fixed rather than derived from the node
+# name: Ceph rejects MDS ids that begin with a digit, and container
+# hostnames frequently do. A fixed id is also inherently stable across
+# container recreation.
+MDS_NAME="aio"
 MDS_DIR="/var/lib/ceph/mds/ceph-$MDS_NAME"
 KEYRING_PATH="$MDS_DIR/keyring"
 FS_NAME="cephfs"

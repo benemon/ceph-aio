@@ -10,8 +10,9 @@ set -e
 # Source common utilities
 source /scripts/lib/common.sh
 
-# Configuration (stable identity survives container recreation)
-MDS_NAME=$(ceph_node_name)
+# Configuration. Fixed id: Ceph rejects MDS ids beginning with a digit,
+# which container hostnames frequently do (must match setup-mds.sh)
+MDS_NAME="aio"
 MARKER_FILE="/var/run/ceph/mds-configured"
 
 log "Starting Ceph MDS daemon"
