@@ -147,6 +147,7 @@ podman exec ceph-dev ceph -s
 | `DASHBOARD_USER` | admin | Dashboard login username |
 | `DASHBOARD_PASS` | admin@ceph123 | Dashboard login password |
 | `DISABLE_MON_DISK_WARNINGS` | false | Set to `true` to disable monitor disk space warnings (useful for CI/testing) |
+| `ENABLE_CEPHFS` | false | Set to `true` to run an MDS and create a `cephfs` filesystem (pools `cephfs_metadata`/`cephfs_data`) |
 
 ### Intelligent Replication Scaling
 
@@ -172,6 +173,7 @@ This container runs the following services via supervisord:
 - **dashboard-setup**: One-shot setup for Ceph dashboard
 - **rbd-pool-setup**: One-shot creation of RBD block pool for testing
 - **rgw-setup**: One-shot creation of RGW realm/zonegroup/zone configuration
+- **ceph-mds** / **mds-setup**: Metadata server and CephFS filesystem creation (only when `ENABLE_CEPHFS=true`)
 
 Setup one-shots run with `autorestart=unexpected`, so a transient failure
 retries rather than leaving the container half-configured. Each writes a

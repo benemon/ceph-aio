@@ -117,14 +117,17 @@ class CephCluster:
         return f"https://{self.endpoint(DASHBOARD_PORT)}"
 
 
-def make_cluster(osd_count: int = 1) -> DockerContainer:
-    return (
+def make_cluster(osd_count: int = 1, **env: str) -> DockerContainer:
+    container = (
         DockerContainer(IMAGE_TAG)
         .with_env("OSD_COUNT", str(osd_count))
         .with_env("OSD_SIZE", "1G")
         .with_env("DISABLE_MON_DISK_WARNINGS", "true")
         .with_exposed_ports(RGW_PORT, DASHBOARD_PORT)
     )
+    for key, value in env.items():
+        container = container.with_env(key, value)
+    return container
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
