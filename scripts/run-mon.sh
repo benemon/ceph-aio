@@ -9,8 +9,8 @@ set -e
 # Source common utilities
 source /scripts/lib/common.sh
 
-# Configuration
-MON_NAME=$(hostname -s)
+# Configuration (stable identity survives container recreation)
+MON_NAME=$(ceph_node_name)
 
 log "Starting Ceph Monitor daemon: $MON_NAME"
 

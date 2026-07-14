@@ -9,8 +9,8 @@ set -e
 # Source common utilities
 source /scripts/lib/common.sh
 
-# Configuration
-MGR_NAME=$(hostname -s)
+# Configuration (stable identity survives container recreation)
+MGR_NAME=$(ceph_node_name)
 KEYRING_PATH="/var/lib/ceph/mgr/ceph-$MGR_NAME/keyring"
 
 log "Starting Ceph Manager daemon"
