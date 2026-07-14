@@ -80,6 +80,12 @@ class CephCluster:
 
     def endpoint(self, container_port: int) -> str:
         host = self._container.get_container_host_ip()
+        # Use an IP literal: RGW applies virtual-host bucket parsing to any
+        # Host header that is a name and does not match its rgw_dns_name
+        # (the container hostname here), which misroutes path-style S3
+        # requests sent to "localhost" — IP hosts are always path-style
+        if host == "localhost":
+            host = "127.0.0.1"
         port = self._container.get_exposed_port(container_port)
         return f"{host}:{port}"
 
