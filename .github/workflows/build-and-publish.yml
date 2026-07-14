@@ -13,7 +13,7 @@ on:
       - 'bootstrap.sh'
       - 'entrypoint.sh'
       - 'supervisord.conf'
-      - 'test-suite.sh'
+      - 'tests/**'
       - '.github/workflows/build-and-publish.yml'
   pull_request:
     branches:
@@ -140,64 +140,19 @@ jobs:
           echo "=== Docker system df ==="
           docker system df
 
-      - name: Run test suite
-        run: |
-          echo "Running comprehensive test suite for ${{ matrix.ceph_version }}"
+      - name: Set up Python for Testcontainers e2e suite
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tests/e2e/requirements.txt
 
-          # Make test script executable
-          chmod +x test-suite.sh
+      - name: Install e2e test dependencies
+        run: pip install -r tests/e2e/requirements.txt
 
-          # Run tests with full image path
-          IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} ./test-suite.sh
-        timeout-minutes: 30
-
-      - name: Collect logs on failure
-        if: failure()
-        run: |
-          # Container name matches the version being tested (must match test-suite.sh)
-          CONTAINER_NAME="ceph-test-$(echo "${{ matrix.ceph_version }}" | sed 's/[^a-zA-Z0-9_-]/_/g')"
-
-          echo "::group::Disk usage inside container"
-          docker exec $CONTAINER_NAME df -h 2>&1 || echo "Cannot check disk usage"
-          echo "::endgroup::"
-
-          echo "::group::Container logs"
-          docker logs $CONTAINER_NAME 2>&1 || echo "No container logs available"
-          echo "::endgroup::"
-
-          echo "::group::Supervisor logs"
-          docker exec $CONTAINER_NAME cat /var/log/supervisor/supervisord.log 2>&1 || echo "No supervisor logs available"
-          echo "::endgroup::"
-
-          echo "::group::OSD-0 log"
-          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-osd-0.log 2>&1 || echo "No OSD-0 log"
-          echo "::endgroup::"
-
-          echo "::group::OSD-0 error log"
-          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-osd-0-error.log 2>&1 || echo "No OSD-0 error log"
-          echo "::endgroup::"
-
-          echo "::group::RGW setup logs"
-          docker exec $CONTAINER_NAME cat /var/log/supervisor/rgw-setup.log 2>&1 || echo "No rgw-setup log"
-          docker exec $CONTAINER_NAME cat /var/log/supervisor/rgw-setup-error.log 2>&1 || echo "No rgw-setup error log"
-          echo "::endgroup::"
-
-          echo "::group::RGW daemon logs"
-          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-rgw.log 2>&1 || echo "No ceph-rgw log"
-          docker exec $CONTAINER_NAME cat /var/log/supervisor/ceph-rgw-error.log 2>&1 || echo "No ceph-rgw error log"
-          echo "::endgroup::"
-
-          echo "::group::Ceph status"
-          docker exec $CONTAINER_NAME ceph -s 2>&1 || echo "Ceph not accessible"
-          echo "::endgroup::"
-
-      - name: Cleanup test container
-        if: always()
-        run: |
-          # Container name matches the version being tested
-          CONTAINER_NAME="ceph-test-$(echo "${{ matrix.ceph_version }}" | sed 's/[^a-zA-Z0-9_-]/_/g')"
-          docker stop $CONTAINER_NAME 2>/dev/null || true
-          docker rm $CONTAINER_NAME 2>/dev/null || true
+      - name: Run Testcontainers e2e suite
+        run: IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} pytest tests/e2e -v
+        timeout-minutes: 25
 
       # Publish steps - only run if tests passed and on main branch
       - name: Set up QEMU for multi-platform builds
