@@ -4,7 +4,12 @@
 # Consumers can gate on `docker inspect .State.Health.Status == healthy`
 # instead of polling ceph commands themselves.
 
-for marker in mgr auth dashboard rbd rgw; do
+markers="mgr auth dashboard rbd rgw"
+if [ "${ENABLE_CEPHFS:-false}" = "true" ]; then
+    markers="$markers mds"
+fi
+
+for marker in $markers; do
     if [ ! -f "/var/run/ceph/${marker}-configured" ]; then
         echo "waiting: ${marker} setup not complete"
         exit 1

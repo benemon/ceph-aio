@@ -48,7 +48,8 @@ ENV MON_IP=0.0.0.0 \
     CEPH_PUBLIC_NETWORK=0.0.0.0/0 \
     CEPH_CLUSTER_NETWORK=0.0.0.0/0 \
     DASHBOARD_USER=admin \
-    DASHBOARD_PASS=admin@ceph123
+    DASHBOARD_PASS=admin@ceph123 \
+    ENABLE_CEPHFS=false
 
 # Healthy once all setup one-shots have completed and the mon responds.
 # start-period covers a slow 3-OSD bootstrap; consumers can gate on

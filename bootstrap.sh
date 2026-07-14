@@ -72,6 +72,35 @@ stderr_logfile=/var/log/supervisor/ceph-osd-$i-error.log
 EOF
 done
 
+# CephFS is opt-in: its supervisor programs are also regenerated per
+# boot so toggling ENABLE_CEPHFS on a recreated container takes effect
+MDS_SUPERVISOR_CONF=/etc/supervisord.d/ceph-mds.conf
+if [ "${ENABLE_CEPHFS:-false}" = "true" ]; then
+    echo "CephFS enabled, generating MDS supervisor config..."
+    cat > "$MDS_SUPERVISOR_CONF" <<EOF
+[program:mds-setup]
+command=/scripts/setup-mds.sh
+autostart=true
+autorestart=unexpected
+exitcodes=0
+startsecs=0
+priority=115
+stdout_logfile=/var/log/supervisor/mds-setup.log
+stderr_logfile=/var/log/supervisor/mds-setup-error.log
+
+[program:ceph-mds]
+command=/scripts/run-mds.sh
+autostart=true
+autorestart=true
+startsecs=15
+priority=118
+stdout_logfile=/var/log/supervisor/ceph-mds.log
+stderr_logfile=/var/log/supervisor/ceph-mds-error.log
+EOF
+else
+    rm -f "$MDS_SUPERVISOR_CONF"
+fi
+
 # ceph.conf is regenerated on every boot from the recorded cluster
 # identity plus the current environment, so the advertised monitor
 # address always matches the container's actual IP
