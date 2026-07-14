@@ -220,7 +220,12 @@ podman exec ceph-dev rbd rm rbd/testimage
 
 ### RADOS Gateway (S3/Swift)
 
-- **Endpoint**: http://localhost:8000
+- **Endpoint**: http://127.0.0.1:8000
+
+Use the IP literal rather than `localhost`: RGW applies virtual-host
+bucket parsing to hostnames that do not match its configured DNS name,
+so S3 requests via `localhost` fail with `NoSuchBucket`. IP endpoints
+are always treated as path-style.
 - **Realm**: default
 - **Zone**: default
 - **Zonegroup**: default
@@ -238,13 +243,13 @@ podman exec ceph-dev radosgw-admin user create \
 
 Using AWS CLI:
 ```bash
-aws --endpoint-url http://localhost:8000 \
+aws --endpoint-url http://127.0.0.1:8000 \
     s3 mb s3://testbucket
 
-aws --endpoint-url http://localhost:8000 \
+aws --endpoint-url http://127.0.0.1:8000 \
     s3 cp /etc/hosts s3://testbucket/test.txt
 
-aws --endpoint-url http://localhost:8000 \
+aws --endpoint-url http://127.0.0.1:8000 \
     s3 ls s3://testbucket/
 ```
 
@@ -252,7 +257,7 @@ Or using environment variables:
 ```bash
 export AWS_ACCESS_KEY_ID=test
 export AWS_SECRET_ACCESS_KEY=test
-export AWS_ENDPOINT_URL=http://localhost:8000
+export AWS_ENDPOINT_URL=http://127.0.0.1:8000
 
 aws s3 mb s3://mybucket
 aws s3 ls
@@ -380,7 +385,7 @@ podman exec ceph-dev radosgw-admin user create \
   --access-key=test --secret-key=test
 
 # Use aws CLI
-aws --endpoint-url http://localhost:8000 \
+aws --endpoint-url http://127.0.0.1:8000 \
   s3 cp /etc/hosts s3://testbucket/myfile
 ```
 
@@ -406,8 +411,10 @@ With multiple OSDs, you can verify replication is working:
 # Start cluster with 3 OSDs
 podman run -d --name ceph-dev -e OSD_COUNT=3 -p 3300:3300 -p 6789:6789 -p 8000:8000 -p 8443:8443 ceph-aio:latest
 
-# Wait for startup (approximately 90 seconds with 3 OSDs)
-sleep 90
+# Wait for the container to report healthy
+until [ "$(podman inspect --format '{{.State.Health.Status}}' ceph-dev)" = "healthy" ]; do
+  sleep 5
+done
 
 # Verify all OSDs are up
 podman exec ceph-dev ceph osd tree
@@ -562,7 +569,7 @@ podman exec ceph-dev tail -100 /var/log/supervisor/ceph-osd-0-error.log
 
 3. Test connectivity (should return 404 with NoSuchBucket error in XML):
    ```bash
-   curl http://localhost:8000
+   curl http://127.0.0.1:8000
    ```
 
 4. Check if realm was created:
@@ -656,12 +663,22 @@ For production-like deployments using HashiCorp Nomad, see the [nomad/README.md]
 
 ## Extending the Setup
 
-### Adding MDS (CephFS)
+### CephFS
 
-You would need to:
-- Create `/scripts/setup-mds.sh` for MDS keyring and configuration
-- Create `/scripts/run-mds.sh` for MDS daemon wrapper
-- Add `[program:ceph-mds]` section to supervisord.conf
+CephFS ships built in — start the container with `ENABLE_CEPHFS=true`
+and an MDS plus a `cephfs` filesystem are created automatically:
+
+```bash
+podman run -d --name ceph-dev -e ENABLE_CEPHFS=true ceph-aio:latest
+
+# Verify the filesystem and MDS
+podman exec ceph-dev ceph fs ls
+podman exec ceph-dev ceph mds stat
+```
+
+Clients on the container's network can use the filesystem through
+`ceph-fuse`, the kernel client, or the `libcephfs` bindings (the
+`python3-cephfs` module ships in the image).
 
 ### Custom Configuration
 
@@ -707,9 +724,9 @@ Images are automatically built and tested weekly via GitHub Actions. See [CI-CD-
 ## CI/CD Pipeline
 
 This project includes a fully automated GitHub Actions pipeline that:
-- **Dynamically discovers** the 2 most recent stable Ceph releases using `skopeo`
+- **Dynamically discovers** the 3 most recent stable Ceph releases using `skopeo`
 - **Automatically adapts** when new major versions are released (e.g., v20.x)
-- **Runs comprehensive tests** validating all functionality for each version
+- **Runs comprehensive tests** for each version: fast pytest/Testcontainers e2e suite on every PR and push, plus a deep extended tier (crash recovery, persistence, network RBD, S3 depth) on the weekly schedule
 - **Publishes successful builds** to Quay.io with semantic versioning tags
 
 The pipeline runs weekly and on every code change, ensuring images are always current with the latest stable Ceph releases. **Zero maintenance required** - the workflow automatically detects and builds new versions!
