@@ -82,6 +82,13 @@ class CephCluster:
     def restart(self, timeout: int = 30) -> None:
         self._wrapped.restart(timeout=timeout)
 
+    def kill(self) -> None:
+        """SIGKILL the container: no graceful shutdown of any daemon."""
+        self._wrapped.kill()
+
+    def start(self) -> None:
+        self._wrapped.start()
+
     def dump_logs(self, reason: str, tail: int = 100) -> None:
         """Print container logs for post-mortem; Ryuk removes the container
         before any workflow-level log collection can reach it."""

@@ -165,6 +165,12 @@ For each discovered version:
 - Dumps container logs on failure (fixtures collect them before Ryuk
   reaps the containers)
 
+The suite is tiered with pytest markers: PR and push runs execute the
+fast tier only, while the weekly schedule and manual dispatch also run
+the `extended` tier — S3 multipart uploads and presigned URLs, SIGKILL
+crash recovery, and an RBD data-path test driven from a second
+container over a shared Docker network.
+
 ### Job 3: Publish
 Only runs on successful builds from main branch or scheduled runs:
 - Loads tested image from artifacts

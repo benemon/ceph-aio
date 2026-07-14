@@ -151,8 +151,18 @@ jobs:
         run: pip install -r tests/e2e/requirements.txt
 
       - name: Run Testcontainers e2e suite
-        run: IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }} pytest tests/e2e -v
-        timeout-minutes: 25
+        run: |
+          export IMAGE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}
+          # The extended tier (deep use-case scenarios) runs on the weekly
+          # schedule and manual dispatch; PR and push runs stay fast
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Running full suite including extended tier"
+            pytest tests/e2e -v
+          else
+            echo "Running fast tier (extended excluded)"
+            pytest tests/e2e -v -m "not extended"
+          fi
+        timeout-minutes: 45
 
       # Publish steps - only run if tests passed and on main branch
       - name: Set up QEMU for multi-platform builds
