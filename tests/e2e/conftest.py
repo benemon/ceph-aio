@@ -13,10 +13,31 @@ import json
 import os
 import time
 
+import docker
+import docker.errors
 import pytest
 from testcontainers.core.container import DockerContainer
 
 IMAGE_TAG = os.environ.get("IMAGE_TAG", "ceph-aio:latest")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def require_local_image():
+    """Refuse to run unless IMAGE_TAG exists in the local Docker daemon.
+
+    docker-py pulls from the registry when a tag is missing locally, so
+    without this guard a missing --load in the build step would silently
+    test the previously *published* image instead of the one just built.
+    """
+    try:
+        docker.from_env().images.get(IMAGE_TAG)
+    except docker.errors.ImageNotFound:
+        pytest.exit(
+            f"Image {IMAGE_TAG} is not present in the local Docker daemon. "
+            "Build it first (docker buildx build --load). Refusing to fall "
+            "back to a registry pull.",
+            returncode=1,
+        )
 
 RGW_PORT = 8000
 DASHBOARD_PORT = 8443
