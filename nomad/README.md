@@ -28,6 +28,32 @@ The provided [ceph-aio.nomad.hcl](ceph-aio.nomad.hcl) includes:
 - **Pre-configured environment**: Sensible defaults for development/testing
 - **Multi-version support**: Easily switch between Ceph versions by changing the image tag
 
+## Docker Driver
+
+The shipped spec uses the Podman task driver. If your Nomad clients run
+the Docker driver instead, use
+[ceph-aio-docker.nomad.hcl](ceph-aio-docker.nomad.hcl) — it is
+identical apart from the driver:
+
+```hcl
+task "ceph-aio" {
+  driver = "docker"
+
+  config {
+    image        = "quay.io/benjamin_holmes/ceph-aio:v19"
+    network_mode = "host"
+  }
+  # env and resources as in the podman spec
+}
+```
+
+```bash
+nomad job run nomad/ceph-aio-docker.nomad.hcl
+```
+
+Everything else in this guide (configuration, readiness, persistence,
+networking trade-offs) applies to both drivers.
+
 ## Configuration
 
 The job spec uses environment variables to configure the cluster:
@@ -48,7 +74,30 @@ env {
 - **Multiple OSDs**: Set `OSD_COUNT = "3"` for replication testing
 - **Larger storage**: Set `OSD_SIZE = "50G"` for more capacity
 - **Network restrictions**: Set `CEPH_PUBLIC_NETWORK` to your specific CIDR (e.g., `"10.0.0.0/8"`)
+- **CephFS**: Set `ENABLE_CEPHFS = "true"` to run an MDS and create a `cephfs` filesystem
+- **CI/constrained hosts**: Set `DISABLE_MON_DISK_WARNINGS = "true"` if the host filesystem is tight on space
 - **Secure credentials**: Use Nomad's [Vault integration](https://developer.hashicorp.com/nomad/docs/job-specification/template#vault-integration) for sensitive data
+
+## Readiness
+
+The image ships a readiness probe (`/scripts/healthcheck.sh`) that
+succeeds once every setup step has completed and the monitor responds.
+Wire it into a Nomad service check so the allocation only reports
+healthy when the cluster is actually usable:
+
+```hcl
+service {
+  name     = "ceph-aio"
+  provider = "nomad"
+
+  check {
+    type     = "script"
+    command  = "/scripts/healthcheck.sh"
+    interval = "15s"
+    timeout  = "10s"
+  }
+}
+```
 
 ## Accessing Services in Nomad
 
@@ -103,7 +152,9 @@ For production Ceph deployments, consider using [Rook](https://rook.io/) or offi
 
 ## Adding Persistence
 
-To persist cluster data between container restarts, add volume mounts to the job spec:
+To persist cluster data across allocation restarts *and recreation*
+(reschedules, redeploys, `job stop`/`run`), add volume mounts to the
+job spec:
 
 ```hcl
 task "ceph-aio" {
@@ -123,7 +174,17 @@ task "ceph-aio" {
 }
 ```
 
-The bootstrap script is idempotent - it will skip setup if the cluster is already initialized.
+The container is recreation-safe: its monitor identity is recorded on
+the config volume and its runtime wiring (OSD supervisor programs,
+ceph.conf, the monitor's advertised address) regenerates on every
+boot, so a brand-new allocation over the same volumes comes back with
+its data intact. Two caveats:
+
+- Run the new allocation with the same `OSD_COUNT` the volumes were
+  created with.
+- Host-path volumes as shown do not follow the job across nodes - pin
+  the job with a [constraint](https://developer.hashicorp.com/nomad/docs/job-specification/constraint)
+  to the node holding the data, or use a Nomad host volume.
 
 ## Troubleshooting
 
@@ -175,42 +236,37 @@ nomad job run nomad/ceph-aio.nomad.hcl
 
 ## Alternative: Bridge Networking
 
-If you prefer bridge networking instead of host networking, you can modify the job spec:
+If you prefer bridge networking instead of host networking, define the
+ports at the group level (Nomad 0.12+ syntax):
 
 ```hcl
-config {
-  image = "quay.io/benjamin_holmes/ceph-aio:v19"
-  network_mode = "bridge"
-
-  ports = [
-    "mon_v2",
-    "mon_v1",
-    "dashboard",
-    "rgw"
-  ]
-}
-
-# Port mappings
-resources {
+group "ceph" {
   network {
-    port "mon_v2" {
-      static = 3300
-      to = 3300
+    mode = "bridge"
+
+    port "mon_v2"    { static = 3300, to = 3300 }
+    port "mon_v1"    { static = 6789, to = 6789 }
+    port "dashboard" { static = 8443, to = 8443 }
+    port "rgw"       { static = 8000, to = 8000 }
+  }
+
+  task "ceph-aio" {
+    driver = "podman"
+
+    config {
+      image = "quay.io/benjamin_holmes/ceph-aio:v19"
+      ports = ["mon_v2", "mon_v1", "dashboard", "rgw"]
     }
-    port "mon_v1" {
-      static = 6789
-      to = 6789
-    }
-    port "dashboard" {
-      static = 8443
-      to = 8443
-    }
-    port "rgw" {
-      static = 8000
-      to = 8000
-    }
+    # ...
   }
 }
 ```
 
-**Note**: Host networking is recommended for simplicity and to ensure the MON advertises the correct IP address for external clients like Ceph-CSI.
+**Note**: With bridge networking only the HTTP services (S3 on 8000,
+dashboard on 8443) are usable from outside the host: RADOS clients
+connect to the MON and are then redirected to the OSDs at their
+advertised container-internal address, which port mapping cannot
+carry. Host networking is therefore required for external RADOS/RBD
+clients such as Ceph-CSI. When testing the S3 endpoint through a
+mapped port, use an IP address rather than a hostname - RGW applies
+virtual-host bucket parsing to unrecognised hostnames.
