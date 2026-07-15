@@ -40,7 +40,7 @@ task "ceph-aio" {
   driver = "docker"
 
   config {
-    image        = "quay.io/benjamin_holmes/ceph-aio:v19"
+    image        = "quay.io/benjamin_holmes/ceph-aio:v20"
     network_mode = "host"
   }
   # env and resources as in the podman spec
@@ -82,23 +82,38 @@ env {
 ## Readiness
 
 The image ships a readiness probe (`/scripts/healthcheck.sh`) that
-succeeds once every setup step has completed and the monitor responds.
-Wire it into a Nomad service check so the allocation only reports
-healthy when the cluster is actually usable:
+succeeds once every enabled subsystem's setup has completed and the
+monitor responds. How much of that contract a Nomad service check can
+express depends on your service discovery:
 
-```hcl
-service {
-  name     = "ceph-aio"
-  provider = "nomad"
+- **Nomad-native services** (what the shipped specs use) support only
+  `tcp`/`http` checks — script checks are not valid with
+  `provider = "nomad"`. The specs therefore ship a tcp check on the
+  monitor port: it gates on "monitor reachable", which is weaker than
+  the full contract.
+- **Consul service discovery** supports script checks, so Consul users
+  can get the full readiness contract:
 
-  check {
-    type     = "script"
-    command  = "/scripts/healthcheck.sh"
-    interval = "15s"
-    timeout  = "10s"
+  ```hcl
+  service {
+    name     = "ceph-aio"
+    provider = "consul"
+
+    check {
+      type     = "script"
+      command  = "/scripts/healthcheck.sh"
+      interval = "15s"
+      timeout  = "10s"
+    }
   }
-}
-```
+  ```
+
+- **Without Consul**, gate on the probe out-of-band — it exits 0 only
+  when the cluster is fully configured:
+
+  ```bash
+  until nomad alloc exec <allocation-id> /scripts/healthcheck.sh; do sleep 5; done
+  ```
 
 ## Accessing Services in Nomad
 
@@ -165,7 +180,7 @@ task "ceph-aio" {
   driver = "podman"
 
   config {
-    image = "quay.io/benjamin_holmes/ceph-aio:v19"
+    image = "quay.io/benjamin_holmes/ceph-aio:v20"
     network_mode = "host"
 
     volumes = [
@@ -258,7 +273,7 @@ group "ceph" {
     driver = "podman"
 
     config {
-      image = "quay.io/benjamin_holmes/ceph-aio:v19"
+      image = "quay.io/benjamin_holmes/ceph-aio:v20"
       ports = ["mon_v2", "mon_v1", "dashboard", "rgw"]
     }
     # ...
