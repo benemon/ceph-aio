@@ -33,9 +33,7 @@ job "ceph-aio" {
       driver = "podman"
 
       config {
-        image = "quay.io/benjamin_holmes/ceph-aio:v20"
-
-        # Use host networking - uses host's IP directly
+        image        = "quay.io/benjamin_holmes/ceph-aio:v20"
         network_mode = "host"
       }
 
