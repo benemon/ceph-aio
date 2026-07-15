@@ -123,18 +123,21 @@ This container is designed to work with the [Ceph CSI driver](https://github.com
 - **Dual protocol support**: MON listens on both v2 (port 3300) and v1 (port 6789)
 - **Cephx authentication**: Fully configured and enabled by default
 - **RBD pool**: Pre-configured and ready for block storage
+- **CephFS with a `csi` subvolume group**: Pre-created, ready for RWX volumes
 - **Host networking**: Ensures CSI driver can connect to the correct MON IP
 
-**Example CSI configuration** (for Kubernetes/Nomad):
-```yaml
-monitors:
-  - "<host-ip>:6789"    # v1 protocol (CSI driver default)
-  - "<host-ip>:3300"    # v2 protocol (optional)
-```
+Runnable, tested examples live in [examples/](examples/):
+
+- [examples/csi-rbd/](examples/csi-rbd/) — plugin job, dynamic block
+  volume, consumer, plus snapshots, clone-from-snapshot and static
+  volume registration
+- [examples/csi-cephfs/](examples/csi-cephfs/) — plugin job, RWX
+  filesystem volume, consumer
 
 The authentication credentials are available inside the container:
 ```bash
-# Get client.admin keyring for CSI driver
+# Get FSID and client.admin key for the CSI cluster map
+nomad alloc exec <allocation-id> ceph fsid
 nomad alloc exec <allocation-id> ceph auth get-key client.admin
 ```
 

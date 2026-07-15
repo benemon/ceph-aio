@@ -1,0 +1,7 @@
+[
+  {
+    "clusterID": "<CEPH_FSID>",
+    "monitors": ["<HOST_IP>:6789", "<HOST_IP>:3300"],
+    "cephFS": { "subvolumeGroup": "csi" }
+  }
+]
