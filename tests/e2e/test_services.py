@@ -68,11 +68,6 @@ def test_s3_object_roundtrip(cluster):
     assert keys == ["hello.txt"]
 
 
-def test_cephfs_disabled_by_default(cluster):
-    # CephFS is opt-in: the default cluster must not grow a filesystem
-    assert cluster.ceph_json("ceph", "fs", "ls") == []
-
-
 def test_security_configuration(cluster):
     for setting in ("auth_client_required", "auth_cluster_required", "auth_service_required"):
         assert cluster.exec("ceph", "config", "get", "mon", setting).strip() == "cephx"

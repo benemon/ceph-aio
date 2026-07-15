@@ -58,6 +58,15 @@ else
     }
 fi
 
+# A single-MDS cluster has no standby, and the filesystem wants one by
+# default: without this the cluster sits in HEALTH_WARN
+# (MDS_INSUFFICIENT_STANDBY) forever
+log "Disabling standby MDS expectation for single-MDS cluster"
+ceph fs set "$FS_NAME" standby_count_wanted 0 || {
+    error "Failed to set standby_count_wanted"
+    exit 1
+}
+
 # Create MDS keyring
 log "Creating MDS keyring"
 mkdir -p "$MDS_DIR"

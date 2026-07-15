@@ -78,10 +78,77 @@ stderr_logfile=/var/log/supervisor/ceph-osd-$i-error.log
 EOF
 done
 
-# CephFS is opt-in: its supervisor programs are also regenerated per
-# boot so toggling ENABLE_CEPHFS on a recreated container takes effect
+# Per-subsystem supervisor programs are also regenerated per boot so
+# toggling an ENABLE_ flag on a recreated container takes effect.
+# Flags control process wiring only: disabling a subsystem leaves its
+# data dormant on persistent volumes; re-enabling reattaches via the
+# idempotent setup paths.
+
+DASHBOARD_SUPERVISOR_CONF=/etc/supervisord.d/ceph-dashboard.conf
+if [ "${ENABLE_DASHBOARD:-true}" = "true" ]; then
+    echo "Dashboard enabled, generating supervisor config..."
+    cat > "$DASHBOARD_SUPERVISOR_CONF" <<EOF
+[program:dashboard-setup]
+command=/scripts/setup-dashboard.sh
+autostart=true
+autorestart=unexpected
+exitcodes=0
+startsecs=0
+priority=100
+stdout_logfile=/var/log/supervisor/dashboard-setup.log
+stderr_logfile=/var/log/supervisor/dashboard-setup-error.log
+EOF
+else
+    rm -f "$DASHBOARD_SUPERVISOR_CONF"
+fi
+
+RBD_SUPERVISOR_CONF=/etc/supervisord.d/ceph-rbd.conf
+if [ "${ENABLE_RBD:-true}" = "true" ]; then
+    echo "RBD enabled, generating supervisor config..."
+    cat > "$RBD_SUPERVISOR_CONF" <<EOF
+[program:rbd-pool-setup]
+command=/scripts/setup-rbd.sh
+autostart=true
+autorestart=unexpected
+exitcodes=0
+startsecs=0
+priority=105
+stdout_logfile=/var/log/supervisor/rbd-pool-setup.log
+stderr_logfile=/var/log/supervisor/rbd-pool-setup-error.log
+EOF
+else
+    rm -f "$RBD_SUPERVISOR_CONF"
+fi
+
+RGW_SUPERVISOR_CONF=/etc/supervisord.d/ceph-rgw.conf
+if [ "${ENABLE_RGW:-true}" = "true" ]; then
+    echo "RGW enabled, generating supervisor config..."
+    cat > "$RGW_SUPERVISOR_CONF" <<EOF
+[program:rgw-setup]
+command=/scripts/setup-rgw.sh
+autostart=true
+autorestart=unexpected
+exitcodes=0
+startsecs=0
+priority=110
+stdout_logfile=/var/log/supervisor/rgw-setup.log
+stderr_logfile=/var/log/supervisor/rgw-setup-error.log
+
+[program:ceph-rgw]
+command=/scripts/run-rgw.sh
+autostart=true
+autorestart=true
+startsecs=30
+priority=120
+stdout_logfile=/var/log/supervisor/ceph-rgw.log
+stderr_logfile=/var/log/supervisor/ceph-rgw-error.log
+EOF
+else
+    rm -f "$RGW_SUPERVISOR_CONF"
+fi
+
 MDS_SUPERVISOR_CONF=/etc/supervisord.d/ceph-mds.conf
-if [ "${ENABLE_CEPHFS:-false}" = "true" ]; then
+if [ "${ENABLE_CEPHFS:-true}" = "true" ]; then
     echo "CephFS enabled, generating MDS supervisor config..."
     cat > "$MDS_SUPERVISOR_CONF" <<EOF
 [program:mds-setup]

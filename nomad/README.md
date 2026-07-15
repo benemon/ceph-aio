@@ -75,7 +75,7 @@ env {
 - **Larger storage**: Set `OSD_SIZE = "50G"` for more capacity
 - **Network restrictions**: Set `CEPH_PUBLIC_NETWORK` to your specific CIDR (e.g., `"10.0.0.0/8"`)
 - **Pinned MON IP**: `MON_IP = "0.0.0.0"` auto-detects via the default route's source address, which is correct even on NAT'd hosts (e.g. KubeVirt/OpenShift Virtualization masquerade VMs, where DNS resolves the unbindable pod IP). If your routing makes detection pick the wrong interface, set `MON_IP` to the host's actual interface IP (`ip route get 1.1.1.1`)
-- **CephFS**: Set `ENABLE_CEPHFS = "true"` to run an MDS and create a `cephfs` filesystem
+- **Slimmer clusters**: every subsystem is on by default; set `ENABLE_RGW`, `ENABLE_DASHBOARD`, `ENABLE_RBD` or `ENABLE_CEPHFS` to `"false"` to trim what you don't need (e.g. RBD-only for Ceph-CSI work — disabling RGW skips the slowest setup step)
 - **CI/constrained hosts**: Set `DISABLE_MON_DISK_WARNINGS = "true"` if the host filesystem is tight on space
 - **Secure credentials**: Use Nomad's [Vault integration](https://developer.hashicorp.com/nomad/docs/job-specification/template#vault-integration) for sensitive data
 

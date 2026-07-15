@@ -147,7 +147,15 @@ podman exec ceph-dev ceph -s
 | `DASHBOARD_USER` | admin | Dashboard login username |
 | `DASHBOARD_PASS` | admin@ceph123 | Dashboard login password |
 | `DISABLE_MON_DISK_WARNINGS` | false | Set to `true` to disable monitor disk space warnings (useful for CI/testing) |
-| `ENABLE_CEPHFS` | false | Set to `true` to run an MDS and create a `cephfs` filesystem (pools `cephfs_metadata`/`cephfs_data`) |
+| `ENABLE_RGW` | true | Set to `false` to skip the RADOS Gateway (realm/zone setup, daemon, S3 API) |
+| `ENABLE_DASHBOARD` | true | Set to `false` to skip the mgr dashboard module and its setup |
+| `ENABLE_RBD` | true | Set to `false` to skip creation of the `rbd` pool |
+| `ENABLE_CEPHFS` | true | Set to `false` to skip the MDS and `cephfs` filesystem (pools `cephfs_metadata`/`cephfs_data`) |
+
+Every subsystem is on by default; the `ENABLE_` flags exist to trim the
+cluster to what a use case needs (e.g. RBD-only for Ceph-CSI work). Flags
+control per-boot process wiring only — on persistent volumes, disabling a
+subsystem leaves its pools dormant and re-enabling reattaches to them.
 
 ### Intelligent Replication Scaling
 
@@ -168,12 +176,12 @@ This container runs the following services via supervisord:
 - **ceph-mon**: Monitor daemon (cluster coordination)
 - **ceph-mgr**: Manager daemon (metrics, orchestration)
 - **ceph-osd-0**: OSD daemon (10GB data storage by default)
-- **ceph-rgw**: RADOS Gateway (S3/Swift API)
+- **ceph-rgw**: RADOS Gateway (S3/Swift API) (unless `ENABLE_RGW=false`)
 - **auth-setup**: One-shot configuration of cephx authentication (ensures proper client authentication)
-- **dashboard-setup**: One-shot setup for Ceph dashboard
-- **rbd-pool-setup**: One-shot creation of RBD block pool for testing
-- **rgw-setup**: One-shot creation of RGW realm/zonegroup/zone configuration
-- **ceph-mds** / **mds-setup**: Metadata server and CephFS filesystem creation (only when `ENABLE_CEPHFS=true`)
+- **dashboard-setup**: One-shot setup for Ceph dashboard (unless `ENABLE_DASHBOARD=false`)
+- **rbd-pool-setup**: One-shot creation of RBD block pool for testing (unless `ENABLE_RBD=false`)
+- **rgw-setup**: One-shot creation of RGW realm/zonegroup/zone configuration (unless `ENABLE_RGW=false`)
+- **ceph-mds** / **mds-setup**: Metadata server and CephFS filesystem creation (unless `ENABLE_CEPHFS=false`)
 
 Setup one-shots run with `autorestart=unexpected`, so a transient failure
 retries rather than leaving the container half-configured. Each writes a
@@ -182,8 +190,8 @@ completion marker under `/var/run/ceph/`.
 ### Readiness
 
 The image defines a Docker `HEALTHCHECK` that reports healthy once every
-setup one-shot has completed and the monitor responds. To wait for a fully
-configured cluster:
+enabled subsystem's setup one-shot has completed and the monitor responds.
+To wait for a fully configured cluster:
 
 ```bash
 until [ "$(docker inspect --format '{{.State.Health.Status}}' ceph-aio)" = "healthy" ]; do
@@ -441,9 +449,10 @@ This container uses a **supervisor-based architecture** with **modular setup scr
 entrypoint.sh
     ↓
 bootstrap.sh
-    ↓ every boot: regenerates ceph.conf, OSD (and optional MDS)
-    ↓   supervisor config in /etc/supervisord.d/, refreshes the
-    ↓   monmap if the container IP changed
+    ↓ every boot: regenerates ceph.conf plus OSD and per-subsystem
+    ↓   supervisor config in /etc/supervisord.d/ (from OSD_COUNT and
+    ↓   the ENABLE_ flags), refreshes the monmap if the container IP
+    ↓   changed
     ↓ first boot only: creates FSID, keyrings, monmap, records the
     ↓   node identity, prepares OSD directories
     ↓
@@ -454,16 +463,16 @@ supervisord (process manager)
     ├── run-mgr.sh (priority 20) - Manager daemon wrapper
     ├── setup-osd.sh (priority 30+N, per-OSD) - Initialises OSDs
     ├── setup-auth.sh (priority 95, one-shot) - Configures cephx authentication
-    ├── setup-dashboard.sh (priority 100, one-shot) - Configures dashboard
-    ├── setup-rbd.sh (priority 105, one-shot) - Creates RBD pool
-    ├── setup-rgw.sh (priority 110, one-shot) - Configures RGW realm/zone
-    ├── setup-mds.sh (priority 115, one-shot) - Creates CephFS (ENABLE_CEPHFS=true only)
-    ├── ceph-mds via run-mds.sh (priority 118) - MDS daemon wrapper (ENABLE_CEPHFS=true only)
-    └── run-rgw.sh (priority 120) - RGW daemon wrapper
+    ├── setup-dashboard.sh (priority 100, one-shot) - Configures dashboard (ENABLE_DASHBOARD)
+    ├── setup-rbd.sh (priority 105, one-shot) - Creates RBD pool (ENABLE_RBD)
+    ├── setup-rgw.sh (priority 110, one-shot) - Configures RGW realm/zone (ENABLE_RGW)
+    ├── setup-mds.sh (priority 115, one-shot) - Creates CephFS (ENABLE_CEPHFS)
+    ├── ceph-mds via run-mds.sh (priority 118) - MDS daemon wrapper (ENABLE_CEPHFS)
+    └── run-rgw.sh (priority 120) - RGW daemon wrapper (ENABLE_RGW)
 
 healthcheck.sh (Docker HEALTHCHECK)
-    → healthy once every setup one-shot has written its completion
-      marker and the monitor responds
+    → healthy once every enabled subsystem's setup one-shot has
+      written its completion marker and the monitor responds
 ```
 
 ### Setup Scripts
@@ -479,7 +488,7 @@ All setup logic has been extracted to maintainable scripts in `/scripts/`:
 - **setup-dashboard.sh**: Waits for an active mgr, enables dashboard, creates user, configures SSL
 - **setup-rbd.sh**: Waits for OSDs, creates and initialises the RBD pool
 - **setup-rgw.sh**: Waits for OSDs, creates RGW realm/zonegroup/zone and commits the period
-- **setup-mds.sh**: Creates CephFS pools, the filesystem and the MDS keyring (ENABLE_CEPHFS=true only)
+- **setup-mds.sh**: Creates CephFS pools, the filesystem and the MDS keyring
 - **setup-osd.sh**: Serialises OSD creation, initialises with BlueStore, starts daemon
 - **healthcheck.sh**: Docker HEALTHCHECK - healthy once all setup markers exist and the mon responds
 - **lib/common.sh**: Shared utilities (logging, condition waits, idempotency, node identity)
@@ -497,7 +506,7 @@ rather than leaving the container half-configured.
 4. **Condition-gated startup**: scripts wait on actual prerequisites (mon responsive, OSDs up, setup markers) - no timing sleeps
 5. **Retryable one-shots**: setup programs are idempotent and restart on unexpected exit
 6. **Daemons start after their configuration exists**: RGW and MDS wrappers gate on setup completion markers, never racing their own setup
-7. **Dynamic OSD/MDS config**: supervisor programs generated per boot from OSD_COUNT and ENABLE_CEPHFS
+7. **Dynamic subsystem config**: supervisor programs generated per boot from OSD_COUNT and the ENABLE_ flags
 8. **Serialised OSD Creation**: OSDs initialise sequentially to prevent race conditions
 9. **Intelligent Replication**: Pool size scales automatically with OSD count
 10. **Explicit readiness**: the HEALTHCHECK is the container's readiness contract - consumers gate on it instead of polling ceph
@@ -683,12 +692,10 @@ For production-like deployments using HashiCorp Nomad, see the [nomad/README.md]
 
 ### CephFS
 
-CephFS ships built in — start the container with `ENABLE_CEPHFS=true`
-and an MDS plus a `cephfs` filesystem are created automatically:
+CephFS ships built in and on by default — every container runs an MDS
+and creates a `cephfs` filesystem (set `ENABLE_CEPHFS=false` to skip it):
 
 ```bash
-podman run -d --name ceph-dev -e ENABLE_CEPHFS=true ceph-aio:latest
-
 # Verify the filesystem and MDS
 podman exec ceph-dev ceph fs ls
 podman exec ceph-dev ceph mds stat

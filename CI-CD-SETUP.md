@@ -162,7 +162,8 @@ For each discovered version:
   - Security configuration (cephx, global_id reclaim)
   - Idempotency across container restart (stable FSID)
   - Readiness via the image HEALTHCHECK (every test gates on it)
-  - CephFS filesystem creation and libcephfs client I/O (ENABLE_CEPHFS)
+  - CephFS filesystem creation and libcephfs client I/O (on by default)
+  - Minimal cluster (all ENABLE_ flags false) reaches healthy with no optional subsystems
 - Dumps container logs on failure (fixtures collect them before Ryuk
   reaps the containers)
 
