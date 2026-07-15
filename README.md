@@ -138,7 +138,7 @@ podman exec ceph-dev ceph -s
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MON_IP` | 0.0.0.0 | IP address for the monitor to bind to (0.0.0.0 = all interfaces) |
+| `MON_IP` | 0.0.0.0 | Monitor address. `0.0.0.0` auto-detects the default route's source address; set explicitly if detection picks the wrong interface |
 | `OSD_COUNT` | 1 | Number of OSD daemons to create (1-N supported, intelligently scales replication) |
 | `OSD_SIZE` | 10G | Size of each OSD (supports K, M, G, T suffixes) |
 | `CEPH_PUBLIC_NETWORK` | 0.0.0.0/0 | Public network CIDR for client-facing traffic |

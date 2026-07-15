@@ -24,10 +24,16 @@ POOL_SIZE=$(calc_pool_size "$OSD_COUNT")
 POOL_MIN_SIZE=$(calc_pool_min_size "$POOL_SIZE")
 
 # Determine the actual IP to use for monmap
-# If MON_IP is 0.0.0.0, find the container's actual IP
+# If MON_IP is 0.0.0.0, find the container's actual IP. Prefer the
+# default route's source address: it is by definition bound to a local
+# interface. hostname -i can resolve to an address that no interface
+# holds (KubeVirt/masquerade VMs resolve the pod-network IP, NAT'd on
+# the far side) and the mon then crash-loops on bind.
 if [ "$MON_IP" = "0.0.0.0" ]; then
-    # Get the container's IP address
-    ACTUAL_MON_IP=$(hostname -i | awk '{print $1}')
+    ACTUAL_MON_IP=$(route_src_ip "$(ip route get 1.0.0.1 2>/dev/null)")
+    if [ -z "$ACTUAL_MON_IP" ]; then
+        ACTUAL_MON_IP=$(hostname -i | awk '{print $1}')
+    fi
 else
     ACTUAL_MON_IP=$MON_IP
 fi

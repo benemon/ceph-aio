@@ -60,7 +60,7 @@ The job spec uses environment variables to configure the cluster:
 
 ```hcl
 env {
-  MON_IP = "0.0.0.0"                    # Uses host's IP automatically
+  MON_IP = "0.0.0.0"                    # Auto-detects the host's routable IP
   OSD_COUNT = "1"                       # Single OSD for dev/test
   OSD_SIZE = "10G"                      # 10GB per OSD
   CEPH_PUBLIC_NETWORK = "0.0.0.0/0"     # Allow all client traffic
@@ -74,6 +74,7 @@ env {
 - **Multiple OSDs**: Set `OSD_COUNT = "3"` for replication testing
 - **Larger storage**: Set `OSD_SIZE = "50G"` for more capacity
 - **Network restrictions**: Set `CEPH_PUBLIC_NETWORK` to your specific CIDR (e.g., `"10.0.0.0/8"`)
+- **Pinned MON IP**: `MON_IP = "0.0.0.0"` auto-detects via the default route's source address, which is correct even on NAT'd hosts (e.g. KubeVirt/OpenShift Virtualization masquerade VMs, where DNS resolves the unbindable pod IP). If your routing makes detection pick the wrong interface, set `MON_IP` to the host's actual interface IP (`ip route get 1.1.1.1`)
 - **CephFS**: Set `ENABLE_CEPHFS = "true"` to run an MDS and create a `cephfs` filesystem
 - **CI/constrained hosts**: Set `DISABLE_MON_DISK_WARNINGS = "true"` if the host filesystem is tight on space
 - **Secure credentials**: Use Nomad's [Vault integration](https://developer.hashicorp.com/nomad/docs/job-specification/template#vault-integration) for sensitive data
