@@ -33,12 +33,14 @@ ceph mgr module enable dashboard || {
     exit 1
 }
 
-# Enable RGW module for dashboard integration
-log "Enabling RGW module for dashboard"
-ceph mgr module enable rgw || {
-    error "Failed to enable RGW module"
-    exit 1
-}
+# Enable RGW module for dashboard integration (only when RGW itself runs)
+if [ "${ENABLE_RGW:-true}" = "true" ]; then
+    log "Enabling RGW module for dashboard"
+    ceph mgr module enable rgw || {
+        error "Failed to enable RGW module"
+        exit 1
+    }
+fi
 
 # Create self-signed certificate
 log "Creating self-signed certificate"

@@ -1,4 +1,4 @@
-"""CephFS: opt-in filesystem via ENABLE_CEPHFS=true.
+"""CephFS: on by default (ENABLE_CEPHFS=true), exercised on a stock cluster.
 
 Fast tier deliberately: push-to-main runs publish images and execute the
 fast tier only, and this test is the feature's sole guard.
@@ -28,7 +28,7 @@ print("roundtrip ok")
 
 @pytest.fixture
 def cephfs_cluster(request):
-    with make_cluster(1, ENABLE_CEPHFS="true") as container:
+    with make_cluster(1) as container:
         cluster = CephCluster(container)
         cluster.wait_healthy()
         yield cluster
@@ -60,6 +60,10 @@ def test_cephfs_filesystem_and_client_io(cephfs_cluster):
     # Filesystem exists and an MDS goes active
     assert "cephfs" in cluster.exec("ceph", "fs", "ls")
     _wait_for_active_mds(cluster)
+
+    # The csi subvolume group ships pre-created (ceph-csi requires it
+    # and does not create it)
+    assert "csi" in cluster.exec("ceph", "fs", "subvolumegroup", "ls", "cephfs")
 
     # Client I/O through userspace libcephfs (no kernel, no FUSE)
     out = cluster.exec("python3", "-c", LIBCEPHFS_ROUNDTRIP)

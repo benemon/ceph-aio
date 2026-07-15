@@ -13,13 +13,15 @@ source /scripts/lib/common.sh
 # Configuration. Fixed id: Ceph rejects MDS ids beginning with a digit,
 # which container hostnames frequently do (must match setup-mds.sh)
 MDS_NAME="aio"
-MARKER_FILE="/var/run/ceph/mds-configured"
+MARKER_FILE="/var/run/ceph/mds-provisioned"
 
 log "Starting Ceph MDS daemon"
 
-# Wait for setup-mds.sh to finish (it also creates the keyring)
+# Wait for setup-mds.sh to provision the filesystem and keyring (its
+# final mds-configured marker comes later: it needs this daemon active
+# to create the CSI subvolume group)
 wait_for_file "$MARKER_FILE" 300 || {
-    error "CephFS configuration marker not found after timeout"
+    error "CephFS provisioning marker not found after timeout"
     exit 1
 }
 

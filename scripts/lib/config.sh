@@ -33,6 +33,14 @@ test_container_name() {
     echo "ceph-test-$(echo "$image_tag" | sed 's/.*://;s/[^a-zA-Z0-9_-]/_/g')"
 }
 
+# Source address from `ip route get` output: the address the kernel
+# would send from, which is by definition bound to a local interface.
+# Prints nothing when no src field is present (e.g. no default route).
+# Usage: route_src_ip <ip-route-get-output>
+route_src_ip() {
+    echo "$1" | awk '{for (i = 1; i < NF; i++) if ($i == "src") {print $(i+1); exit}}'
+}
+
 # Filter a newline-separated tag list down to the most recent bare major
 # version tags (v18, v19, ...), version-sorted
 # Usage: filter_recent_major_tags <tags> [count]

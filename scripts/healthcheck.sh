@@ -4,10 +4,12 @@
 # Consumers can gate on `docker inspect .State.Health.Status == healthy`
 # instead of polling ceph commands themselves.
 
-markers="mgr auth dashboard rbd rgw"
-if [ "${ENABLE_CEPHFS:-false}" = "true" ]; then
-    markers="$markers mds"
-fi
+# mgr and auth always run; the rest are gated on their ENABLE_ flags
+markers="mgr auth"
+if [ "${ENABLE_DASHBOARD:-true}" = "true" ]; then markers="$markers dashboard"; fi
+if [ "${ENABLE_RBD:-true}" = "true" ]; then markers="$markers rbd"; fi
+if [ "${ENABLE_RGW:-true}" = "true" ]; then markers="$markers rgw"; fi
+if [ "${ENABLE_CEPHFS:-true}" = "true" ]; then markers="$markers mds"; fi
 
 for marker in $markers; do
     if [ ! -f "/var/run/ceph/${marker}-configured" ]; then

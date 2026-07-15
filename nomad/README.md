@@ -60,7 +60,7 @@ The job spec uses environment variables to configure the cluster:
 
 ```hcl
 env {
-  MON_IP = "0.0.0.0"                    # Uses host's IP automatically
+  MON_IP = "0.0.0.0"                    # Auto-detects the host's routable IP
   OSD_COUNT = "1"                       # Single OSD for dev/test
   OSD_SIZE = "10G"                      # 10GB per OSD
   CEPH_PUBLIC_NETWORK = "0.0.0.0/0"     # Allow all client traffic
@@ -74,7 +74,8 @@ env {
 - **Multiple OSDs**: Set `OSD_COUNT = "3"` for replication testing
 - **Larger storage**: Set `OSD_SIZE = "50G"` for more capacity
 - **Network restrictions**: Set `CEPH_PUBLIC_NETWORK` to your specific CIDR (e.g., `"10.0.0.0/8"`)
-- **CephFS**: Set `ENABLE_CEPHFS = "true"` to run an MDS and create a `cephfs` filesystem
+- **Pinned MON IP**: `MON_IP = "0.0.0.0"` auto-detects via the default route's source address, which is correct even on NAT'd hosts (e.g. KubeVirt/OpenShift Virtualization masquerade VMs, where DNS resolves the unbindable pod IP). If your routing makes detection pick the wrong interface, set `MON_IP` to the host's actual interface IP (`ip route get 1.1.1.1`)
+- **Slimmer clusters**: every subsystem is on by default; set `ENABLE_RGW`, `ENABLE_DASHBOARD`, `ENABLE_RBD` or `ENABLE_CEPHFS` to `"false"` to trim what you don't need (e.g. RBD-only for Ceph-CSI work — disabling RGW skips the slowest setup step)
 - **CI/constrained hosts**: Set `DISABLE_MON_DISK_WARNINGS = "true"` if the host filesystem is tight on space
 - **Secure credentials**: Use Nomad's [Vault integration](https://developer.hashicorp.com/nomad/docs/job-specification/template#vault-integration) for sensitive data
 
@@ -122,18 +123,21 @@ This container is designed to work with the [Ceph CSI driver](https://github.com
 - **Dual protocol support**: MON listens on both v2 (port 3300) and v1 (port 6789)
 - **Cephx authentication**: Fully configured and enabled by default
 - **RBD pool**: Pre-configured and ready for block storage
+- **CephFS with a `csi` subvolume group**: Pre-created, ready for RWX volumes
 - **Host networking**: Ensures CSI driver can connect to the correct MON IP
 
-**Example CSI configuration** (for Kubernetes/Nomad):
-```yaml
-monitors:
-  - "<host-ip>:6789"    # v1 protocol (CSI driver default)
-  - "<host-ip>:3300"    # v2 protocol (optional)
-```
+Runnable, tested examples live in [examples/](examples/):
+
+- [examples/csi-rbd/](examples/csi-rbd/) — plugin job, dynamic block
+  volume, consumer, plus snapshots, clone-from-snapshot and static
+  volume registration
+- [examples/csi-cephfs/](examples/csi-cephfs/) — plugin job, RWX
+  filesystem volume, consumer
 
 The authentication credentials are available inside the container:
 ```bash
-# Get client.admin keyring for CSI driver
+# Get FSID and client.admin key for the CSI cluster map
+nomad alloc exec <allocation-id> ceph fsid
 nomad alloc exec <allocation-id> ceph auth get-key client.admin
 ```
 

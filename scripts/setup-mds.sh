@@ -15,6 +15,11 @@ FS_NAME="cephfs"
 METADATA_POOL="cephfs_metadata"
 DATA_POOL="cephfs_data"
 PG_NUM=8
+# Two markers: run-mds.sh starts the daemon on the first; the second is
+# the healthcheck marker, written only once the MDS is active and the
+# CSI subvolume group exists (creating the group needs an active MDS,
+# so it cannot happen before the daemon starts)
+PROVISIONED_MARKER="/var/run/ceph/mds-provisioned"
 MARKER_FILE="/var/run/ceph/mds-configured"
 
 log "Starting CephFS (MDS) setup"
@@ -58,6 +63,15 @@ else
     }
 fi
 
+# A single-MDS cluster has no standby, and the filesystem wants one by
+# default: without this the cluster sits in HEALTH_WARN
+# (MDS_INSUFFICIENT_STANDBY) forever
+log "Disabling standby MDS expectation for single-MDS cluster"
+ceph fs set "$FS_NAME" standby_count_wanted 0 || {
+    error "Failed to set standby_count_wanted"
+    exit 1
+}
+
 # Create MDS keyring
 log "Creating MDS keyring"
 mkdir -p "$MDS_DIR"
@@ -77,8 +91,23 @@ chown -R ceph:ceph "$MDS_DIR" || {
     exit 1
 }
 
-# Mark as configured. run-mds.sh waits for this marker, so the daemon
-# only starts against the created filesystem.
+# Release the daemon: run-mds.sh waits for this marker, so the MDS
+# only starts against the created filesystem
+mark_done "$PROVISIONED_MARKER" "CephFS provisioning"
+
+# ceph-csi expects its subvolume group to pre-exist (it does not create
+# one), and creating it needs an active MDS: the mgr volumes module
+# mounts the filesystem to make the group directory
+wait_for_command 180 bash -c "ceph mds stat | grep -q up:active" || {
+    error "No active MDS, cannot create CSI subvolume group"
+    exit 1
+}
+log "Creating 'csi' subvolume group for ceph-csi"
+ceph fs subvolumegroup create "$FS_NAME" csi || {
+    error "Failed to create CSI subvolume group"
+    exit 1
+}
+
 mark_done "$MARKER_FILE" "CephFS"
 
 success "CephFS filesystem '$FS_NAME' configured"
