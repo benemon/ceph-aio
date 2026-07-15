@@ -38,6 +38,9 @@ jobs:
   # Job 0: Fast unit tests for the pure shell logic (no containers)
   unit-tests:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -46,7 +49,18 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq bats
 
       - name: Run unit tests
-        run: bats tests/unit
+        # bats does not create the --output directory itself
+        run: mkdir -p test-results && bats tests/unit --report-formatter junit --output test-results
+
+      # Dependabot-triggered runs get a read-only token and cannot
+      # create check runs, so skip the reporter there
+      - name: Publish unit test report
+        uses: dorny/test-reporter@v2
+        if: (success() || failure()) && github.actor != 'dependabot[bot]'
+        with:
+          name: Unit tests (bats)
+          path: test-results/report.xml
+          reporter: java-junit
 
   # Job 1: Discover latest stable Ceph versions
   discover-versions:
@@ -104,6 +118,9 @@ jobs:
     needs: discover-versions
     if: ${{ inputs.skip_tests != true }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     strategy:
       matrix:
         ceph_version: ${{ fromJson(needs.discover-versions.outputs.matrix) }}
@@ -157,10 +174,10 @@ jobs:
           # schedule and manual dispatch; PR and push runs stay fast
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Running full suite including extended tier"
-            pytest tests/e2e -v
+            pytest tests/e2e -v --junitxml=test-results/e2e-junit.xml
           else
             echo "Running fast tier (extended excluded)"
-            pytest tests/e2e -v -m "not extended"
+            pytest tests/e2e -v -m "not extended" --junitxml=test-results/e2e-junit.xml
           fi
         timeout-minutes: 45
 
@@ -249,6 +266,17 @@ jobs:
             sleep $((attempt * 30))
           done
           echo "Successfully pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.ceph_version }}-${{ steps.build-date.outputs.date }} (immutable, expires in 4 weeks)"
+
+      # Last step so a reporting failure can never block publishing;
+      # dependabot-triggered runs get a read-only token and cannot
+      # create check runs, so skip the reporter there
+      - name: Publish e2e test report
+        uses: dorny/test-reporter@v2
+        if: (success() || failure()) && github.actor != 'dependabot[bot]'
+        with:
+          name: e2e tests (${{ matrix.ceph_version }})
+          path: test-results/e2e-junit.xml
+          reporter: java-junit
 
   # Job 2b: Build and publish (skip tests) for manual workflow
   build-and-publish:

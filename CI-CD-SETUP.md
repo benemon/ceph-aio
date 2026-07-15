@@ -87,9 +87,9 @@ You can manually trigger builds with custom versions:
 
 ### Job 0: Unit Tests
 Runs the BATS suite in `tests/unit/` against the pure shell helpers in
-`scripts/lib/config.sh` (replication sizing, container naming, version
-matrix construction). No containers involved, so it completes in seconds
-and fails fast on logic regressions.
+`scripts/lib/config.sh` (replication sizing, container naming, monitor
+IP parsing, version matrix construction). No containers involved, so it
+completes in seconds and fails fast on logic regressions.
 
 ### Job 1: Discover Versions
 Automatically discovers the latest stable Ceph releases using `skopeo`:
@@ -167,12 +167,18 @@ For each discovered version:
 - Dumps container logs on failure (fixtures collect them before Ryuk
   reaps the containers)
 
+Both suites emit JUnit XML, published as GitHub check runs via
+`dorny/test-reporter` — per-test results appear on the workflow run and
+on pull requests without digging through logs. (Skipped on
+Dependabot-triggered runs, whose read-only token cannot create checks.)
+
 The suite is tiered with pytest markers: PR and push runs execute the
 fast tier only, while the weekly schedule and manual dispatch also run
 the `extended` tier — S3 multipart uploads and presigned URLs, SIGKILL
 crash recovery, an RBD data-path test driven from a second container
-over a shared Docker network, and data persistence across container
-recreation on named volumes.
+over a shared Docker network, data persistence across container
+recreation on named volumes, and the dashboard-without-RGW flag
+combination (the one cross-subsystem coupling in the setup scripts).
 
 ### Job 3: Publish
 Only runs on successful builds from main branch or scheduled runs:
