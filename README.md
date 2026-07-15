@@ -440,10 +440,12 @@ This container uses a **supervisor-based architecture** with **modular setup scr
 ```
 entrypoint.sh
     ↓
-bootstrap.sh (one-time setup)
-    ↓ creates FSID, keyrings, monmap
-    ↓ prepares OSD directories
-    ↓ generates supervisor config for OSDs
+bootstrap.sh
+    ↓ every boot: regenerates ceph.conf, OSD (and optional MDS)
+    ↓   supervisor config in /etc/supervisord.d/, refreshes the
+    ↓   monmap if the container IP changed
+    ↓ first boot only: creates FSID, keyrings, monmap, records the
+    ↓   node identity, prepares OSD directories
     ↓
 supervisord (process manager)
     ↓
@@ -455,7 +457,13 @@ supervisord (process manager)
     ├── setup-dashboard.sh (priority 100, one-shot) - Configures dashboard
     ├── setup-rbd.sh (priority 105, one-shot) - Creates RBD pool
     ├── setup-rgw.sh (priority 110, one-shot) - Configures RGW realm/zone
+    ├── setup-mds.sh (priority 115, one-shot) - Creates CephFS (ENABLE_CEPHFS=true only)
+    ├── ceph-mds via run-mds.sh (priority 118) - MDS daemon wrapper (ENABLE_CEPHFS=true only)
     └── run-rgw.sh (priority 120) - RGW daemon wrapper
+
+healthcheck.sh (Docker HEALTHCHECK)
+    → healthy once every setup one-shot has written its completion
+      marker and the monitor responds
 ```
 
 ### Setup Scripts
@@ -464,28 +472,35 @@ All setup logic has been extracted to maintainable scripts in `/scripts/`:
 
 - **run-mon.sh**: Starts monitor daemon with logging
 - **run-mgr.sh**: Waits for keyring, then starts manager daemon
-- **run-rgw.sh**: Waits for keyring, then starts RGW daemon
-- **setup-mgr.sh**: Creates manager keyring, sets PG limits, disables autoscaler, configures security
+- **run-rgw.sh**: Waits for the RGW configuration marker, then starts the RGW daemon (never before the realm exists)
+- **run-mds.sh**: Waits for the CephFS configuration marker, then starts the MDS daemon
+- **setup-mgr.sh**: Creates manager keyring, sets PG limits, disables autoscaler, configures security and dev-container warning suppressions
 - **setup-auth.sh**: Configures cephx authentication for secure client connections
-- **setup-dashboard.sh**: Enables dashboard, creates user, configures SSL
-- **setup-rbd.sh**: Creates and initialises RBD pool for block storage
-- **setup-rgw.sh**: Creates RGW realm/zonegroup/zone, restarts daemon
+- **setup-dashboard.sh**: Waits for an active mgr, enables dashboard, creates user, configures SSL
+- **setup-rbd.sh**: Waits for OSDs, creates and initialises the RBD pool
+- **setup-rgw.sh**: Waits for OSDs, creates RGW realm/zonegroup/zone and commits the period
+- **setup-mds.sh**: Creates CephFS pools, the filesystem and the MDS keyring (ENABLE_CEPHFS=true only)
 - **setup-osd.sh**: Serialises OSD creation, initialises with BlueStore, starts daemon
-- **lib/common.sh**: Shared utilities (logging, waiting, idempotency)
+- **healthcheck.sh**: Docker HEALTHCHECK - healthy once all setup markers exist and the mon responds
+- **lib/common.sh**: Shared utilities (logging, condition waits, idempotency, node identity)
+- **lib/config.sh**: Pure configuration helpers (replication sizing, version matrix) - unit-tested in `tests/unit/`
 
-All scripts are **idempotent** with marker files in `/var/run/ceph/`.
+All setup one-shots are **idempotent** (marker files in `/var/run/ceph/`)
+and run with `autorestart=unexpected`, so a transient failure retries
+rather than leaving the container half-configured.
 
 ### Key Design Decisions
 
 1. **Supervisord**: Manages all daemons with automatic restarts
 2. **Modular Scripts**: All logic extracted to separate, testable scripts
-3. **Bootstrap Script**: One-time initialisation, idempotent
-4. **Priority-based Startup**: Ensures MON, MGR, OSDs, RGW ordering
-5. **One-shot Programs**: Dashboard and RGW setup run once then exit
-6. **Dynamic OSD Config**: Supervisor config generated based on OSD_COUNT
-7. **Zero Inline Bash**: All commands in supervisord.conf are simple script calls
+3. **Per-boot vs one-time bootstrap**: runtime wiring (ceph.conf, supervisor includes, monmap address) regenerates every boot so recreated containers work over persistent volumes; cluster identity is created once
+4. **Condition-gated startup**: scripts wait on actual prerequisites (mon responsive, OSDs up, setup markers) - no timing sleeps
+5. **Retryable one-shots**: setup programs are idempotent and restart on unexpected exit
+6. **Daemons start after their configuration exists**: RGW and MDS wrappers gate on setup completion markers, never racing their own setup
+7. **Dynamic OSD/MDS config**: supervisor programs generated per boot from OSD_COUNT and ENABLE_CEPHFS
 8. **Serialised OSD Creation**: OSDs initialise sequentially to prevent race conditions
 9. **Intelligent Replication**: Pool size scales automatically with OSD count
+10. **Explicit readiness**: the HEALTHCHECK is the container's readiness contract - consumers gate on it instead of polling ceph
 
 ## Advantages of This Approach
 
@@ -586,6 +601,7 @@ The cluster is configured to maintain `HEALTH_OK` status in development:
 **Automatically resolved:**
 - `AUTH_INSECURE_GLOBAL_ID_RECLAIM_ALLOWED`: Disabled by default (security best practice, CVE-2021-20288)
 - `POOL_NO_REDUNDANCY`: Warnings silenced for single-OSD setups (expected behaviour)
+- `POOL_APP_NOT_ENABLED`: Silenced - RGW creates pools on demand and tagging timing varies by Ceph version
 
 **Other potential warnings:**
 - `TOO_FEW_PGS`: Fine for testing with small pools
@@ -620,10 +636,12 @@ podman run -d --name ceph-dev -p 3300:3300 -p 6789:6789 -p 8000:8000 -p 8443:844
    podman run -d --name ceph-dev -p 3300:3300 -p 6789:6789 -p 8000:8000 -p 8443:8443 ceph-aio:latest
    ```
 
-2. **Watch startup** (takes approximately 60 seconds for single OSD, 90 seconds for 3 OSDs):
+2. **Wait for readiness** (typically 30-60 seconds):
    ```bash
-   podman logs -f ceph-dev
-   # Wait for "Bootstrap complete!"
+   until [ "$(podman inspect --format '{{.State.Health.Status}}' ceph-dev)" = "healthy" ]; do
+     sleep 5
+   done
+   # Or watch the boot: podman logs -f ceph-dev
    ```
 
 3. **Check cluster health**:
@@ -682,20 +700,21 @@ Clients on the container's network can use the filesystem through
 
 ### Custom Configuration
 
-Mount your own ceph.conf:
-```bash
-podman run -d \
-  --name ceph-dev \
-  -v ./my-ceph.conf:/etc/ceph/ceph.conf:z \
-  ceph-aio:latest
-```
+`/etc/ceph/ceph.conf` is regenerated on every boot (this is how the
+container keeps its advertised address correct across recreation), so
+mounting a custom ceph.conf over it does not work. Apply custom
+settings through the cluster's configuration database instead, which
+persists in the monitor store:
 
-Note: The bootstrap script will skip if config already exists.
+```bash
+podman exec ceph-dev ceph config set osd osd_memory_target 1073741824
+podman exec ceph-dev ceph config dump
+```
 
 ## Version Information
 
 - Base image: `quay.io/ceph/ceph` (version specified via `CEPH_VERSION` ARG in Containerfile)
-- Supervisor: Installed from RHEL repos
+- Supervisor and jq: installed from EPEL/CentOS Stream repos at build time
 
 To use a different Ceph version, update the `CEPH_VERSION` ARG in the Containerfile.
 
