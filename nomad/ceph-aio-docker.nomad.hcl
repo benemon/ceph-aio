@@ -7,16 +7,41 @@ job "ceph-aio" {
 
   group "ceph" {
     count = 1
+
+    # Host-mode port reservation: gives the service check a port label
+    # and stops Nomad placing anything else on the monitor's port. The
+    # task itself still uses driver-level host networking.
+    network {
+      port "mon_v1" {
+        static = 6789
+      }
+    }
+
+    # Nomad-native service checks are tcp/http only, so this signals
+    # "monitor reachable", not "every subsystem configured". For the
+    # image's full readiness contract see README: Readiness.
+    service {
+      name     = "ceph-aio"
+      provider = "nomad"
+      port     = "mon_v1"
+
+      check {
+        type     = "tcp"
+        interval = "15s"
+        timeout  = "5s"
+      }
+    }
+
     task "ceph-aio" {
       driver = "docker"
 
       config {
-        image        = "quay.io/benjamin_holmes/ceph-aio:v19"
+        image        = "quay.io/benjamin_holmes/ceph-aio:v20"
         network_mode = "host"
       }
 
       env {
-        MON_IP               = "0.0.0.0" # Will use host's IP
+        MON_IP               = "0.0.0.0" # Auto-detects the host's routable IP
         OSD_COUNT            = "1"
         OSD_SIZE             = "10G"
         CEPH_PUBLIC_NETWORK  = "0.0.0.0/0"
