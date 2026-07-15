@@ -28,6 +28,32 @@ The provided [ceph-aio.nomad.hcl](ceph-aio.nomad.hcl) includes:
 - **Pre-configured environment**: Sensible defaults for development/testing
 - **Multi-version support**: Easily switch between Ceph versions by changing the image tag
 
+## Docker Driver
+
+The shipped spec uses the Podman task driver. If your Nomad clients run
+the Docker driver instead, use
+[ceph-aio-docker.nomad.hcl](ceph-aio-docker.nomad.hcl) — it is
+identical apart from the driver:
+
+```hcl
+task "ceph-aio" {
+  driver = "docker"
+
+  config {
+    image        = "quay.io/benjamin_holmes/ceph-aio:v19"
+    network_mode = "host"
+  }
+  # env and resources as in the podman spec
+}
+```
+
+```bash
+nomad job run nomad/ceph-aio-docker.nomad.hcl
+```
+
+Everything else in this guide (configuration, readiness, persistence,
+networking trade-offs) applies to both drivers.
+
 ## Configuration
 
 The job spec uses environment variables to configure the cluster:
