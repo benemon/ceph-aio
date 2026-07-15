@@ -190,7 +190,9 @@ completion marker under `/var/run/ceph/`.
 ### Readiness
 
 The image defines a Docker `HEALTHCHECK` that reports healthy once every
-enabled subsystem's setup one-shot has completed and the monitor responds.
+enabled subsystem's setup one-shot has completed, the monitor responds,
+and (when CephFS is enabled) the MDS is active — including after a
+restart, where the setup markers persist but the MDS must rejoin.
 To wait for a fully configured cluster:
 
 ```bash
@@ -490,7 +492,7 @@ All setup logic has been extracted to maintainable scripts in `/scripts/`:
 - **setup-rgw.sh**: Waits for OSDs, creates RGW realm/zonegroup/zone and commits the period
 - **setup-mds.sh**: Creates CephFS pools, the filesystem and the MDS keyring
 - **setup-osd.sh**: Serialises OSD creation, initialises with BlueStore, starts daemon
-- **healthcheck.sh**: Docker HEALTHCHECK - healthy once all setup markers exist and the mon responds
+- **healthcheck.sh**: Docker HEALTHCHECK - healthy once all setup markers exist, the mon responds, and the MDS is active (when CephFS is enabled)
 - **lib/common.sh**: Shared utilities (logging, condition waits, idempotency, node identity)
 - **lib/config.sh**: Pure configuration helpers (replication sizing, version matrix) - unit-tested in `tests/unit/`
 
