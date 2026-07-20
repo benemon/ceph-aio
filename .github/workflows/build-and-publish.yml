@@ -55,7 +55,7 @@ jobs:
       # Dependabot-triggered runs get a read-only token and cannot
       # create check runs, so skip the reporter there
       - name: Publish unit test report
-        uses: dorny/test-reporter@v2
+        uses: dorny/test-reporter@v3
         if: (success() || failure()) && github.actor != 'dependabot[bot]'
         with:
           name: Unit tests (bats)
@@ -271,7 +271,7 @@ jobs:
       # dependabot-triggered runs get a read-only token and cannot
       # create check runs, so skip the reporter there
       - name: Publish e2e test report
-        uses: dorny/test-reporter@v2
+        uses: dorny/test-reporter@v3
         if: (success() || failure()) && github.actor != 'dependabot[bot]'
         with:
           name: e2e tests (${{ matrix.ceph_version }})
