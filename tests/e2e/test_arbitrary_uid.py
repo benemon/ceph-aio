@@ -10,9 +10,15 @@ from botocore.config import Config
 
 from conftest import CephCluster, _dump_logs_on_failure, make_cluster
 
+# libcephfs enforces POSIX permissions using the caller's uid/gid, and a
+# fresh CephFS root is 0755 root:root — so an arbitrary-UID client cannot
+# write at the root. Real workloads consume CephFS via ceph-csi subvolumes;
+# here we mount as the admin identity (uid/gid 0) to exercise the data path.
 LIBCEPHFS_ROUNDTRIP = """
 import cephfs
 fs = cephfs.LibCephFS(conffile="/etc/ceph/ceph.conf")
+fs.conf_set("client_mount_uid", "0")
+fs.conf_set("client_mount_gid", "0")
 fs.mount()
 fd = fs.open("/arbitrary-uid.txt", "w", 0o644)
 fs.write(fd, b"arbitrary uid payload", 0)
