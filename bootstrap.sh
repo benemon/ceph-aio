@@ -51,10 +51,13 @@ echo ""
 export MON_NAME
 export MGR_NAME
 
-# Runtime directory for admin sockets and setup markers; container-local,
-# so it must exist on every boot, not just first bootstrap
-mkdir -p /var/run/ceph
-chown ceph:ceph /var/run/ceph
+# Top-level runtime state cannot be shadowed by /run tmpfs or Ceph volumes.
+mkdir -p /ceph-run/supervisor
+# A fresh non-preseeded data volume also hides the image's tmp directory.
+mkdir -p /var/lib/ceph/tmp
+if is_root; then
+    chown ceph:ceph /ceph-run
+fi
 
 # Supervisor programs for the OSDs are regenerated on every boot: this
 # config lives in the container filesystem, not on a data volume, so a
@@ -72,8 +75,8 @@ autostart=true
 autorestart=true
 startsecs=35
 priority=$((30 + i))
-stdout_logfile=/var/log/supervisor/ceph-osd-$i.log
-stderr_logfile=/var/log/supervisor/ceph-osd-$i-error.log
+stdout_logfile=/ceph-run/supervisor/ceph-osd-$i.log
+stderr_logfile=/ceph-run/supervisor/ceph-osd-$i-error.log
 
 EOF
 done
@@ -95,8 +98,8 @@ autorestart=unexpected
 exitcodes=0
 startsecs=0
 priority=100
-stdout_logfile=/var/log/supervisor/dashboard-setup.log
-stderr_logfile=/var/log/supervisor/dashboard-setup-error.log
+stdout_logfile=/ceph-run/supervisor/dashboard-setup.log
+stderr_logfile=/ceph-run/supervisor/dashboard-setup-error.log
 EOF
 else
     rm -f "$DASHBOARD_SUPERVISOR_CONF"
@@ -113,8 +116,8 @@ autorestart=unexpected
 exitcodes=0
 startsecs=0
 priority=105
-stdout_logfile=/var/log/supervisor/rbd-pool-setup.log
-stderr_logfile=/var/log/supervisor/rbd-pool-setup-error.log
+stdout_logfile=/ceph-run/supervisor/rbd-pool-setup.log
+stderr_logfile=/ceph-run/supervisor/rbd-pool-setup-error.log
 EOF
 else
     rm -f "$RBD_SUPERVISOR_CONF"
@@ -131,8 +134,8 @@ autorestart=unexpected
 exitcodes=0
 startsecs=0
 priority=110
-stdout_logfile=/var/log/supervisor/rgw-setup.log
-stderr_logfile=/var/log/supervisor/rgw-setup-error.log
+stdout_logfile=/ceph-run/supervisor/rgw-setup.log
+stderr_logfile=/ceph-run/supervisor/rgw-setup-error.log
 
 [program:ceph-rgw]
 command=/scripts/run-rgw.sh
@@ -140,8 +143,8 @@ autostart=true
 autorestart=true
 startsecs=30
 priority=120
-stdout_logfile=/var/log/supervisor/ceph-rgw.log
-stderr_logfile=/var/log/supervisor/ceph-rgw-error.log
+stdout_logfile=/ceph-run/supervisor/ceph-rgw.log
+stderr_logfile=/ceph-run/supervisor/ceph-rgw-error.log
 EOF
 else
     rm -f "$RGW_SUPERVISOR_CONF"
@@ -158,8 +161,8 @@ autorestart=unexpected
 exitcodes=0
 startsecs=0
 priority=115
-stdout_logfile=/var/log/supervisor/mds-setup.log
-stderr_logfile=/var/log/supervisor/mds-setup-error.log
+stdout_logfile=/ceph-run/supervisor/mds-setup.log
+stderr_logfile=/ceph-run/supervisor/mds-setup-error.log
 
 [program:ceph-mds]
 command=/scripts/run-mds.sh
@@ -167,8 +170,8 @@ autostart=true
 autorestart=true
 startsecs=15
 priority=118
-stdout_logfile=/var/log/supervisor/ceph-mds.log
-stderr_logfile=/var/log/supervisor/ceph-mds-error.log
+stdout_logfile=/ceph-run/supervisor/ceph-mds.log
+stderr_logfile=/ceph-run/supervisor/ceph-mds-error.log
 EOF
 else
     rm -f "$MDS_SUPERVISOR_CONF"
@@ -188,6 +191,7 @@ cluster network = $CEPH_CLUSTER_NETWORK
 auth cluster required = cephx
 auth service required = cephx
 auth client required = cephx
+run dir = /ceph-run
 osd pool default size = $POOL_SIZE
 osd pool default min size = $POOL_MIN_SIZE
 osd pool default pg num = 8
@@ -239,11 +243,15 @@ if [ -f /etc/ceph/ceph.conf ] && [ -f /var/lib/ceph/mon/ceph-$MON_NAME/done ]; t
         monmaptool --addv "$MON_NAME" "[v2:$ACTUAL_MON_IP:3300,v1:$ACTUAL_MON_IP:6789]" "$MONMAP_TMP"
         ceph-mon --cluster $CLUSTER -i "$MON_NAME" --inject-monmap "$MONMAP_TMP"
         rm -f "$MONMAP_TMP"
-        chown -R ceph:ceph "/var/lib/ceph/mon/ceph-$MON_NAME"
+        if is_root; then
+            chown -R ceph:ceph "/var/lib/ceph/mon/ceph-$MON_NAME"
+        fi
         echo "Monmap updated."
     fi
 
-    chown -R ceph:ceph /etc/ceph
+    if is_root; then
+        chown -R ceph:ceph /etc/ceph
+    fi
     echo ""
     echo "Runtime configuration refreshed!"
     echo "Starting supervisord to manage daemons..."
@@ -268,6 +276,9 @@ echo "Creating admin keyring..."
 ceph-authtool --create-keyring /etc/ceph/ceph.client.admin.keyring \
     --gen-key -n client.admin --cap mon 'allow *' --cap osd 'allow *' \
     --cap mds 'allow *' --cap mgr 'allow *'
+if ! is_root; then
+    chmod g+r /etc/ceph/ceph.client.admin.keyring
+fi
 
 # Create monitor keyring
 echo "Creating monitor keyring..."
@@ -294,7 +305,9 @@ ceph-mon --cluster ${CLUSTER} --mkfs -i $MON_NAME \
 touch /var/lib/ceph/mon/ceph-$MON_NAME/done
 
 # Set ownership
-chown -R ceph:ceph /var/lib/ceph/mon/ceph-$MON_NAME /etc/ceph
+if is_root; then
+    chown -R ceph:ceph /var/lib/ceph/mon/ceph-$MON_NAME /etc/ceph
+fi
 
 # Bootstrap manager
 echo "Bootstrapping manager..."

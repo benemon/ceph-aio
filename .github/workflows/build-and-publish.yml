@@ -113,6 +113,56 @@ jobs:
 
           echo "Final matrix: $JSON_ARRAY"
 
+  # Fast OpenShift compatibility lane: one version booted as an arbitrary UID
+  # with GID 0, without added capabilities or privileged mode.
+  arbitrary-uid-e2e:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build v19 image for arbitrary-UID testing
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg CEPH_VERSION=v19 \
+            --tag ceph-aio:arbitrary-uid \
+            --file Containerfile \
+            --load \
+            .
+
+      - name: Set up Python for Testcontainers e2e suite
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tests/e2e/requirements.txt
+
+      - name: Install e2e test dependencies
+        run: pip install -r tests/e2e/requirements.txt
+
+      - name: Run arbitrary-UID storage smoke
+        env:
+          IMAGE_TAG: ceph-aio:arbitrary-uid
+          CEPH_AIO_UID: "1000680000:0"
+        run: pytest tests/e2e/test_arbitrary_uid.py -v --junitxml=test-results/arbitrary-uid-junit.xml
+        timeout-minutes: 15
+
+      - name: Publish arbitrary-UID e2e test report
+        uses: dorny/test-reporter@v3
+        if: (success() || failure()) && github.actor != 'dependabot[bot]'
+        with:
+          name: e2e tests (arbitrary UID, v19)
+          path: test-results/arbitrary-uid-junit.xml
+          reporter: java-junit
+
   # Job 2: Build, test, and publish each version independently
   build-test-publish:
     needs: discover-versions

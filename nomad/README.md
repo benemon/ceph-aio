@@ -214,8 +214,8 @@ its data intact. Two caveats:
 nomad alloc exec <allocation-id> supervisorctl status
 
 # View specific daemon logs
-nomad alloc exec <allocation-id> tail -100 /var/log/supervisor/ceph-mon.log
-nomad alloc exec <allocation-id> tail -100 /var/log/supervisor/ceph-osd-0.log
+nomad alloc exec <allocation-id> tail -100 /ceph-run/supervisor/ceph-mon.log
+nomad alloc exec <allocation-id> tail -100 /ceph-run/supervisor/ceph-osd-0.log
 ```
 
 ### Check Cluster Health

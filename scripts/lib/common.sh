@@ -1,6 +1,13 @@
 #!/bin/bash
 # Common utilities for Ceph setup scripts
 
+[ -f /ceph-run/nss-env ] && . /ceph-run/nss-env
+
+# Return success when the current process has root privileges.
+is_root() {
+    [ "$(id -u)" -eq 0 ]
+}
+
 # Logging functions
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"

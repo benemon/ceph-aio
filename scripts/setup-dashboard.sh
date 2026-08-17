@@ -7,7 +7,7 @@ source /scripts/lib/common.sh
 # Configuration (with environment variable overrides)
 DASHBOARD_USER="${DASHBOARD_USER:-admin}"
 DASHBOARD_PASS="${DASHBOARD_PASS:-admin@ceph123}"
-MARKER_FILE="/var/run/ceph/dashboard-configured"
+MARKER_FILE="/ceph-run/dashboard-configured"
 
 log "Starting dashboard setup"
 

@@ -7,7 +7,7 @@ source /scripts/lib/common.sh
 # Configuration (stable identity survives container recreation)
 MGR_NAME=$(ceph_node_name)
 KEYRING_PATH="/var/lib/ceph/mgr/ceph-$MGR_NAME/keyring"
-MARKER_FILE="/var/run/ceph/mgr-configured"
+MARKER_FILE="/ceph-run/mgr-configured"
 
 log "Starting manager bootstrap"
 
@@ -86,11 +86,13 @@ ceph auth get-or-create "mgr.$MGR_NAME" \
     exit 1
 }
 
-# Set ownership
-chown -R ceph:ceph "/var/lib/ceph/mgr/ceph-$MGR_NAME" || {
-    error "Failed to set ownership"
-    exit 1
-}
+# Set ownership when the daemon will drop to the ceph user
+if is_root; then
+    chown -R ceph:ceph "/var/lib/ceph/mgr/ceph-$MGR_NAME" || {
+        error "Failed to set ownership"
+        exit 1
+    }
+fi
 
 # Mark as configured
 mark_done "$MARKER_FILE" "Manager"

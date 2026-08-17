@@ -185,7 +185,7 @@ This container runs the following services via supervisord:
 
 Setup one-shots run with `autorestart=unexpected`, so a transient failure
 retries rather than leaving the container half-configured. Each writes a
-completion marker under `/var/run/ceph/`.
+completion marker under `/ceph-run/`.
 
 ### Readiness
 
@@ -336,8 +336,8 @@ podman exec ceph-dev supervisorctl restart ceph-mgr
 
 ```bash
 # Via supervisor logs
-podman exec ceph-dev tail -f /var/log/supervisor/ceph-mon.log
-podman exec ceph-dev tail -f /var/log/supervisor/ceph-osd-0.log
+podman exec ceph-dev tail -f /ceph-run/supervisor/ceph-mon.log
+podman exec ceph-dev tail -f /ceph-run/supervisor/ceph-osd-0.log
 
 # Or via podman logs (shows all output)
 podman logs -f ceph-dev
@@ -496,7 +496,7 @@ All setup logic has been extracted to maintainable scripts in `/scripts/`:
 - **lib/common.sh**: Shared utilities (logging, condition waits, idempotency, node identity)
 - **lib/config.sh**: Pure configuration helpers (replication sizing, version matrix) - unit-tested in `tests/unit/`
 
-All setup one-shots are **idempotent** (marker files in `/var/run/ceph/`)
+All setup one-shots are **idempotent** (marker files in `/ceph-run/`)
 and run with `autorestart=unexpected`, so a transient failure retries
 rather than leaving the container half-configured.
 
@@ -561,7 +561,7 @@ podman exec ceph-dev supervisorctl status
 
 Check specific daemon logs:
 ```bash
-podman exec ceph-dev tail -100 /var/log/supervisor/ceph-osd-0-error.log
+podman exec ceph-dev tail -100 /ceph-run/supervisor/ceph-osd-0-error.log
 ```
 
 ### Dashboard Not Accessible
@@ -590,7 +590,7 @@ podman exec ceph-dev tail -100 /var/log/supervisor/ceph-osd-0-error.log
 
 2. Check RGW logs:
    ```bash
-   podman exec ceph-dev tail -100 /var/log/supervisor/ceph-rgw.log
+   podman exec ceph-dev tail -100 /ceph-run/supervisor/ceph-rgw.log
    ```
 
 3. Test connectivity (should return 404 with NoSuchBucket error in XML):

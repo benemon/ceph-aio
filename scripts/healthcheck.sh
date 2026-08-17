@@ -4,6 +4,8 @@
 # Consumers can gate on `docker inspect .State.Health.Status == healthy`
 # instead of polling ceph commands themselves.
 
+[ -f /ceph-run/nss-env ] && . /ceph-run/nss-env
+
 # mgr and auth always run; the rest are gated on their ENABLE_ flags
 markers="mgr auth"
 if [ "${ENABLE_DASHBOARD:-true}" = "true" ]; then markers="$markers dashboard"; fi
@@ -12,7 +14,7 @@ if [ "${ENABLE_RGW:-true}" = "true" ]; then markers="$markers rgw"; fi
 if [ "${ENABLE_CEPHFS:-true}" = "true" ]; then markers="$markers mds"; fi
 
 for marker in $markers; do
-    if [ ! -f "/var/run/ceph/${marker}-configured" ]; then
+    if [ ! -f "/ceph-run/${marker}-configured" ]; then
         echo "waiting: ${marker} setup not complete"
         exit 1
     fi

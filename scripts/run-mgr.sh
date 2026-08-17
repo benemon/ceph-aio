@@ -23,9 +23,12 @@ wait_for_file "$KEYRING_PATH" 60 || {
 
 # Start manager daemon in foreground mode
 log "Manager keyring found, starting daemon"
+MGR_USER_ARGS=()
+if is_root; then
+    MGR_USER_ARGS=(--setuser ceph --setgroup ceph)
+fi
 exec /usr/bin/ceph-mgr \
     --cluster ceph \
     -i "$MGR_NAME" \
     --foreground \
-    --setuser ceph \
-    --setgroup ceph
+    "${MGR_USER_ARGS[@]}"
