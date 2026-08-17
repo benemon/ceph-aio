@@ -370,6 +370,28 @@ container (after `podman rm`, or a compose recreation) and the cluster
 returns with its data intact. Run the new container with the same
 OSD_COUNT the volumes were created with.
 
+## OpenShift / arbitrary UID
+
+The image runs unchanged as root (the default above) **and** as an
+arbitrary non-root UID with GID 0, so it is accepted by OpenShift's
+`restricted-v2` SCC with no `securityContext`, added capabilities, or
+privileged mode. Deploy it with a PVC at `/var/lib/ceph`; OpenShift's
+`fsGroup` makes the volume writable to the assigned UID. When running as
+root, daemons still drop to the `ceph` user exactly as before.
+
+Two things to know:
+
+- **Runtime paths moved.** Supervisor sockets/logs, the Ceph run
+  directory, and setup markers now live under `/ceph-run` (previously
+  `/var/run/ceph` and `/var/log/supervisor`) so an arbitrary UID can write
+  them and no data-volume mount can shadow them. Daemon logs are at
+  `/ceph-run/supervisor/*.log`. This affects root-mode users whose tooling
+  referenced the old paths.
+- **Volumes are not portable across UID modes.** Data written as root is
+  owned by the `ceph` user (UID 167); a volume created that way cannot be
+  reused by an arbitrary OpenShift UID, and vice versa. Pick one mode per
+  set of volumes.
+
 ## Common Operations
 
 ### Create a Pool
