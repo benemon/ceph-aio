@@ -19,8 +19,8 @@ PG_NUM=8
 # the healthcheck marker, written only once the MDS is active and the
 # CSI subvolume group exists (creating the group needs an active MDS,
 # so it cannot happen before the daemon starts)
-PROVISIONED_MARKER="/var/run/ceph/mds-provisioned"
-MARKER_FILE="/var/run/ceph/mds-configured"
+PROVISIONED_MARKER="/ceph-run/mds-provisioned"
+MARKER_FILE="/ceph-run/mds-configured"
 
 log "Starting CephFS (MDS) setup"
 
@@ -85,11 +85,13 @@ ceph auth get-or-create "mds.$MDS_NAME" \
     exit 1
 }
 
-# Set ownership
-chown -R ceph:ceph "$MDS_DIR" || {
-    error "Failed to set MDS directory ownership"
-    exit 1
-}
+# Set ownership when the daemon will drop to the ceph user
+if is_root; then
+    chown -R ceph:ceph "$MDS_DIR" || {
+        error "Failed to set MDS directory ownership"
+        exit 1
+    }
+fi
 
 # Release the daemon: run-mds.sh waits for this marker, so the MDS
 # only starts against the created filesystem

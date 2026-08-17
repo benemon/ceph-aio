@@ -46,9 +46,9 @@ def _wait_for_active_mds(cluster: CephCluster, timeout: int = 120) -> None:
     # Surface the daemon's own logs before failing: a crash-looping MDS
     # is invisible in cluster state
     for logfile in ("ceph-mds-error.log", "ceph-mds.log", "mds-setup-error.log"):
-        print(f"===== /var/log/supervisor/{logfile} =====")
+        print(f"===== /ceph-run/supervisor/{logfile} =====")
         try:
-            print(cluster.exec("bash", "-c", f"cat /var/log/supervisor/{logfile} 2>&1 || true"))
+            print(cluster.exec("bash", "-c", f"cat /ceph-run/supervisor/{logfile} 2>&1 || true"))
         except AssertionError:
             pass
     raise TimeoutError(f"no active MDS within {timeout}s (mds stat: {status})")

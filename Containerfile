@@ -5,6 +5,7 @@ FROM quay.io/ceph/ceph:${CEPH_VERSION}
 # Install minimal dependencies
 RUN dnf install -y \
     supervisor \
+    nss_wrapper \
     uuid \
     hostname \
     procps-ng \
@@ -23,8 +24,29 @@ RUN mkdir -p \
     /var/lib/ceph/bootstrap-rgw \
     /var/lib/ceph/bootstrap-mds \
     /var/lib/ceph/tmp \
+    /ceph-run/supervisor \
     /etc/ceph \
-    /var/log/supervisor
+    /etc/supervisord.d
+
+# /ceph-run avoids both /run tmpfs and Ceph data/config volume shadowing.
+# GID 0 write access supports OpenShift's arbitrary UID while setgid preserves
+# that group on files created at runtime.
+RUN chgrp -R 0 \
+        /var/lib/ceph \
+        /ceph-run \
+        /etc/ceph \
+        /etc/supervisord.d \
+    && chmod -R g=u \
+        /var/lib/ceph \
+        /ceph-run \
+        /etc/ceph \
+        /etc/supervisord.d \
+    && find \
+        /var/lib/ceph \
+        /ceph-run \
+        /etc/ceph \
+        /etc/supervisord.d \
+        -type d -exec chmod g+s {} +
 
 # Copy configuration and scripts
 COPY supervisord.conf /etc/supervisord.conf

@@ -7,7 +7,7 @@ source /scripts/lib/common.sh
 # Configuration
 POOL_NAME="rbd"
 PG_NUM=32
-MARKER_FILE="/var/run/ceph/rbd-configured"
+MARKER_FILE="/ceph-run/rbd-configured"
 
 log "Starting RBD pool setup"
 

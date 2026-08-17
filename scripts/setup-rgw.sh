@@ -10,7 +10,7 @@ REALM="default"
 ZONEGROUP="default"
 ZONE="default"
 ENDPOINT="http://0.0.0.0:8000"
-MARKER_FILE="/var/run/ceph/rgw-configured"
+MARKER_FILE="/ceph-run/rgw-configured"
 
 log "Starting RGW (RADOS Gateway) setup"
 
@@ -44,11 +44,13 @@ ceph auth get-or-create client.rgw.gateway \
     exit 1
 }
 
-# Set ownership
-chown -R ceph:ceph /var/lib/ceph/radosgw || {
-    error "Failed to set RGW directory ownership"
-    exit 1
-}
+# Set ownership when the daemon will drop to the ceph user
+if is_root; then
+    chown -R ceph:ceph /var/lib/ceph/radosgw || {
+        error "Failed to set RGW directory ownership"
+        exit 1
+    }
+fi
 
 # Check if realm already exists
 if radosgw-admin realm list 2>/dev/null | grep -q "\"$REALM\""; then

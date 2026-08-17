@@ -13,7 +13,7 @@ source /scripts/lib/common.sh
 # Configuration. Fixed id: Ceph rejects MDS ids beginning with a digit,
 # which container hostnames frequently do (must match setup-mds.sh)
 MDS_NAME="aio"
-MARKER_FILE="/var/run/ceph/mds-provisioned"
+MARKER_FILE="/ceph-run/mds-provisioned"
 
 log "Starting Ceph MDS daemon"
 
@@ -27,9 +27,12 @@ wait_for_file "$MARKER_FILE" 300 || {
 
 # Start MDS daemon in foreground mode
 log "CephFS configuration complete, starting MDS daemon"
+MDS_USER_ARGS=()
+if is_root; then
+    MDS_USER_ARGS=(--setuser ceph --setgroup ceph)
+fi
 exec /usr/bin/ceph-mds \
     --cluster ceph \
     -i "$MDS_NAME" \
     --foreground \
-    --setuser ceph \
-    --setgroup ceph
+    "${MDS_USER_ARGS[@]}"

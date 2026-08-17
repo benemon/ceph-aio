@@ -15,9 +15,12 @@ MON_NAME=$(ceph_node_name)
 log "Starting Ceph Monitor daemon: $MON_NAME"
 
 # Start monitor daemon in foreground mode
+MON_USER_ARGS=()
+if is_root; then
+    MON_USER_ARGS=(--setuser ceph --setgroup ceph)
+fi
 exec /usr/bin/ceph-mon \
     --cluster ceph \
     -i "$MON_NAME" \
     --foreground \
-    --setuser ceph \
-    --setgroup ceph
+    "${MON_USER_ARGS[@]}"

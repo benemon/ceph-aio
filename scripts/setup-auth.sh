@@ -4,7 +4,7 @@ set -e
 # Source common utilities
 source /scripts/lib/common.sh
 
-MARKER_FILE="/var/run/ceph/auth-configured"
+MARKER_FILE="/ceph-run/auth-configured"
 
 log "Starting authentication configuration"
 

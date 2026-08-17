@@ -14,7 +14,7 @@ set -e
 source /scripts/lib/common.sh
 
 # Configuration
-MARKER_FILE="/var/run/ceph/rgw-configured"
+MARKER_FILE="/ceph-run/rgw-configured"
 
 log "Starting RADOS Gateway (RGW) daemon"
 
@@ -26,9 +26,12 @@ wait_for_file "$MARKER_FILE" 300 || {
 
 # Start RGW daemon in foreground mode
 log "RGW configuration complete, starting daemon"
+RGW_USER_ARGS=()
+if is_root; then
+    RGW_USER_ARGS=(--setuser ceph --setgroup ceph)
+fi
 exec /usr/bin/radosgw \
     -n client.rgw.gateway \
     --cluster ceph \
     --foreground \
-    --setuser ceph \
-    --setgroup ceph
+    "${RGW_USER_ARGS[@]}"

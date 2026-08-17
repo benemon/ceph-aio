@@ -125,6 +125,8 @@ def make_cluster(osd_count: int = 1, **env: str) -> DockerContainer:
         .with_env("DISABLE_MON_DISK_WARNINGS", "true")
         .with_exposed_ports(RGW_PORT, DASHBOARD_PORT)
     )
+    if user := os.environ.get("CEPH_AIO_UID"):
+        container = container.with_kwargs(user=user)
     for key, value in env.items():
         container = container.with_env(key, value)
     return container

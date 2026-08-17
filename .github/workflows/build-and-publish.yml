@@ -113,6 +113,61 @@ jobs:
 
           echo "Final matrix: $JSON_ARRAY"
 
+  # OpenShift compatibility lane: each discovered version booted as an
+  # arbitrary UID with GID 0, without added capabilities or privileged mode.
+  arbitrary-uid-e2e:
+    needs: discover-versions
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    strategy:
+      matrix:
+        ceph_version: ${{ fromJson(needs.discover-versions.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image for arbitrary-UID testing
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg CEPH_VERSION=${{ matrix.ceph_version }} \
+            --tag ceph-aio:arbitrary-uid-${{ matrix.ceph_version }} \
+            --file Containerfile \
+            --load \
+            .
+
+      - name: Set up Python for Testcontainers e2e suite
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tests/e2e/requirements.txt
+
+      - name: Install e2e test dependencies
+        run: pip install -r tests/e2e/requirements.txt
+
+      - name: Run arbitrary-UID storage smoke
+        env:
+          IMAGE_TAG: ceph-aio:arbitrary-uid-${{ matrix.ceph_version }}
+          CEPH_AIO_UID: "1000680000:0"
+        run: pytest tests/e2e/test_arbitrary_uid.py -v --junitxml=test-results/arbitrary-uid-junit.xml
+        timeout-minutes: 15
+
+      - name: Publish arbitrary-UID e2e test report
+        uses: dorny/test-reporter@v3
+        if: (success() || failure()) && github.actor != 'dependabot[bot]'
+        with:
+          name: e2e tests (arbitrary UID, ${{ matrix.ceph_version }})
+          path: test-results/arbitrary-uid-junit.xml
+          reporter: java-junit
+
   # Job 2: Build, test, and publish each version independently
   build-test-publish:
     needs: discover-versions
