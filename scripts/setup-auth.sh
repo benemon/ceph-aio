@@ -20,13 +20,11 @@ wait_for_cluster || {
     exit 1
 }
 
-# Configure cephx authentication settings
+# Configure cephx authentication settings. The legacy auth_supported
+# umbrella option was removed from the option schema in the 2026-08-18
+# v19.2.6/v20.2.4 image rebuilds; the three *_required options below are
+# the supported equivalents.
 log "Configuring cephx authentication"
-ceph config set mon auth_supported cephx || {
-    error "Failed to set auth_supported"
-    exit 1
-}
-
 ceph config set mon auth_cluster_required cephx || {
     error "Failed to set auth_cluster_required"
     exit 1
